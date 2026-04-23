@@ -1,0 +1,17 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+openai==1.58.1
+requests==2.32.3
+pyyaml==6.0.2
+pytest==8.3.4
+gradio>=4.0.0
+networkx>=3.0
+numpy>=1.24.0
+gymnasium>=0.29.0
+trl==0.11.0
+transformers
+datasets
+accelerate
+torch
+unsloth

@@ -1,0 +1,113 @@
+spec_version: 1
+name: code-organism-vm
+type: space
+runtime: fastapi
+app: app:app
+port: 7860
+
+description: >
+  CodeOrganismVM — A Program That Refuses to Die.
+  An LLM agent lives inside a broken, hostile execution environment.
+  The environment continuously injects faults, corrupts state, mutates
+  constraints, and spawns adversarial sub-tasks. The agent must self-heal,
+  self-correct, self-improve, and self-replicate its strategy — or the
+  organism dies. Vitality score [0–100] represents organism health.
+  Death is a real terminal state. Survival instinct is learned through
+  reinforcement from episodes of failure and recovery.
+
+version: "1.0.0"
+author: Andrea
+
+tags:
+  - openenv
+  - self-healing
+  - hostile-environment
+  - code-organism
+  - reinforcement-learning
+  - self-improvement
+  - multi-agent
+  - long-horizon
+
+env:
+  api_url: "http://localhost:7860"
+  endpoints:
+    health: GET /health
+    metadata: GET /metadata
+    schema: GET /schema
+    reset: POST /reset
+    step: POST /step
+    state: GET /state
+    tasks: GET /tasks
+    grader: POST /grader
+
+tasks:
+  - id: phase_1
+    name: "Phase 1: Metabolic Stabilization"
+    difficulty: easy
+    description: >
+      Single fault per episode. Agent must diagnose and heal a corrupted
+      import, flipped assertion, missing env var, null return, or off-by-one
+      error. 20 max steps. Fault injector fires every 8 steps.
+      Advancement gate: episode survival ≥ 30%.
+    num_episodes: 100
+
+  - id: phase_2
+    name: "Phase 2: Colony Survival"
+    difficulty: medium
+    description: >
+      Multi-fault environment (2–4 initial faults). Fault injector fires
+      every 6 steps. Phase 2 adds dependency_cycle, permission_revoked,
+      race_condition, schema_mismatch. Subagent spawning becomes necessary.
+      50 max steps. Advancement gate: survival ≥ 55%.
+    num_episodes: 100
+
+  - id: phase_3
+    name: "Phase 3: Adversarial Expert"
+    difficulty: expert
+    description: >
+      FaultInjector adapts to agent behavior. Targets last-patched modules.
+      Adds targeted_regression, cascade_corruption, checkpoint_invalidation.
+      Snorkel AI expert validators challenge patch quality. 100 max steps.
+      Advancement gate: held-out seed success ≥ 40%.
+    num_episodes: 100
+
+models:
+  observation:
+    type: object
+    fields:
+      - timestep
+      - step_count
+      - max_steps
+      - vitality_score
+      - stack_trace
+      - stdout
+      - file_tree
+      - env_vars
+      - test_results
+      - active_checkpoints
+      - subagent_results
+      - watchdog_flags
+
+  action:
+    type: object
+    fields:
+      - action_type
+      - path
+      - diff
+      - test_suite
+      - task
+      - module
+      - checkpoint_id
+      - query
+      - signal_type
+      - justification
+
+  reward:
+    type: float
+    breakdown:
+      - vitality_delta       # R1, weight 35%
+      - test_recovery        # R2, weight 30%
+      - efficiency_bonus     # R3, weight 15%
+      - coordination_bonus   # R4, weight 10%
+      - novelty_bonus        # R5, weight 10%
+      - watchdog_penalty     # hard penalty
