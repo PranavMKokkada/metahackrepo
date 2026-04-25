@@ -114,11 +114,8 @@ class TestSimulator:
 
     def test_patch_tracks_module(self):
         sim = CodebaseSimulator(seed=42)
-        key = list(sim.files.keys())[0]
-        # Use actual content from the file so the patch succeeds
-        content = sim.files[key]
-        first_word = content.split()[0] if content.split() else "x"
-        sim.apply_patch(key, f"{first_word}|{first_word}_patched")
+        key = next(path for path, content in sim.files.items() if path.endswith(".py") and "return " in content)
+        sim.apply_patch(key, "return |return  ")
         assert len(sim.last_patched_modules) > 0
 
     def test_quarantine_module(self):
@@ -243,6 +240,7 @@ class TestEnvironment:
     def test_auto_checkpoint_every_5_steps(self):
         env = CodeOrganismEnv()
         env.reset("phase_1")
+        env._vitality = 60.0
         initial_cps = len(env._simulator.checkpoints)
         for _ in range(5):
             env.step(Action(action_type=CodeOrganismActionType.EMIT_SIGNAL, signal_type="ping"))

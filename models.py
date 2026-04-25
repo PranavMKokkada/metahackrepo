@@ -52,6 +52,9 @@ class TestResult(BaseModel):
     duration_ms: float = 0.0
 
 
+TestResult.__test__ = False
+
+
 class Checkpoint(BaseModel):
     """A snapshot available for rollback."""
     checkpoint_id: str

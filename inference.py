@@ -32,6 +32,7 @@ API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
 ENV_API_URL = os.getenv("ENV_API_URL", "http://localhost:7860")
+ENV_API_KEY = os.getenv("CODEORGANISM_API_KEY") or os.getenv("CODEORGANISM_API_KEYS", "").split(",", 1)[0]
 
 TASK_IDS = ["phase_1", "phase_2", "phase_3"]
 TEMPERATURE = 0.0
@@ -52,7 +53,7 @@ Available Actions (Respond ONLY with valid JSON):
 - {"action_type": "patch_file", "path": "src/core.py", "diff": "old|new"}
 - {"action_type": "run_tests"}
 - {"action_type": "spawn_subagent", "task": "fix auth"}
-- {"action_type": "quarantine", "path": "src/auth.py"}
+- {"action_type": "quarantine", "module": "src/auth.py"}
 - {"action_type": "rollback", "checkpoint_id": "cp_5"}
 - {"action_type": "request_expert", "query": "..."}
 - {"action_type": "emit_signal", "signal_type": "...", "justification": "..."}
@@ -113,7 +114,8 @@ def parse_model_response(raw: str) -> dict:
 
 def run_task(client: OpenAI, task_id: str) -> tuple[dict, list[float]]:
     """Run one phase end-to-end and return grader result + rewards list."""
-    resp = requests.post(f"{ENV_API_URL}/reset", json={"task_id": task_id})
+    headers = {"x-api-key": ENV_API_KEY} if ENV_API_KEY else {}
+    resp = requests.post(f"{ENV_API_URL}/reset", json={"task_id": task_id}, headers=headers)
     resp.raise_for_status()
     obs = resp.json()
 
@@ -146,7 +148,7 @@ def run_task(client: OpenAI, task_id: str) -> tuple[dict, list[float]]:
         actions.append(action)
 
         try:
-            step_resp = requests.post(f"{ENV_API_URL}/step", json=action)
+            step_resp = requests.post(f"{ENV_API_URL}/step", json=action, headers=headers)
             step_resp.raise_for_status()
             step_result = step_resp.json()
         except Exception as exc:
@@ -173,6 +175,7 @@ def run_task(client: OpenAI, task_id: str) -> tuple[dict, list[float]]:
     grader_resp = requests.post(
         f"{ENV_API_URL}/grader",
         json={"task_id": task_id, "actions": actions},
+        headers=headers,
     )
     grader_resp.raise_for_status()
     grader_result = grader_resp.json()

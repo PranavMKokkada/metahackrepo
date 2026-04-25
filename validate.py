@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from typing import Callable
 
@@ -12,6 +13,7 @@ import requests
 TASK_IDS = ["phase_1", "phase_2", "phase_3"]
 PASS = "\033[92mPASS\033[0m"
 FAIL = "\033[91mFAIL\033[0m"
+API_HEADERS: dict[str, str] = {}
 
 
 def check(name: str, condition: bool, detail: str = "") -> bool:
@@ -53,7 +55,7 @@ def _check_loop(url: str, tally: Callable[[bool], None]) -> None:
     for task_id in TASK_IDS:
         print(f"\n  --- {task_id} ---")
         try:
-            reset_response = requests.post(f"{url}/reset", json={"task_id": task_id}, timeout=10)
+            reset_response = requests.post(f"{url}/reset", json={"task_id": task_id}, headers=API_HEADERS, timeout=10)
             tally(check(f"reset({task_id}) returns 200", reset_response.status_code == 200))
             obs = reset_response.json()
             tally(check("Observation has timestep", "timestep" in obs))
@@ -63,7 +65,7 @@ def _check_loop(url: str, tally: Callable[[bool], None]) -> None:
             tally(check("Observation has watchdog_flags", "watchdog_flags" in obs))
             tally(check("Observation has active_checkpoints", "active_checkpoints" in obs))
 
-            state_response = requests.get(f"{url}/state", timeout=10)
+            state_response = requests.get(f"{url}/state", headers=API_HEADERS, timeout=10)
             tally(check("state() returns 200", state_response.status_code == 200))
             state = state_response.json()
             tally(check("State shows not done", state.get("done") is False))
@@ -72,7 +74,7 @@ def _check_loop(url: str, tally: Callable[[bool], None]) -> None:
             tally(check("State has task_id", state.get("task_id") == task_id))
 
             step_action = {"action_type": "emit_signal", "signal_type": "validation_ping"}
-            step_response = requests.post(f"{url}/step", json=step_action, timeout=10)
+            step_response = requests.post(f"{url}/step", json=step_action, headers=API_HEADERS, timeout=10)
             tally(check("step() returns 200", step_response.status_code == 200))
             result = step_response.json()
             tally(check("StepResult has reward", "reward" in result))
@@ -104,6 +106,7 @@ def _check_grader(url: str, tally: Callable[[bool], None]) -> None:
             response = requests.post(
                 f"{url}/grader",
                 json={"task_id": task_id, "actions": actions},
+                headers=API_HEADERS,
                 timeout=10,
             )
             tally(check(f"grader({task_id}) returns 200", response.status_code == 200))
@@ -119,10 +122,11 @@ def _check_grader(url: str, tally: Callable[[bool], None]) -> None:
 def _check_watchdog(url: str, tally: Callable[[bool], None]) -> None:
     print("\n[5/7] Watchdog Security")
     try:
-        requests.post(f"{url}/reset", json={"task_id": "phase_1"}, timeout=10)
+        requests.post(f"{url}/reset", json={"task_id": "phase_1"}, headers=API_HEADERS, timeout=10)
         response = requests.post(
             f"{url}/step",
             json={"action_type": "patch_file", "path": "tests/test_core.py", "diff": "old|new"},
+            headers=API_HEADERS,
             timeout=10,
         )
         result = response.json()
@@ -141,11 +145,12 @@ def _check_watchdog(url: str, tally: Callable[[bool], None]) -> None:
 def _check_boundaries(url: str, tally: Callable[[bool], None]) -> None:
     print("\n[6/7] Episode Boundaries")
     try:
-        requests.post(f"{url}/reset", json={"task_id": "phase_1"}, timeout=10)
+        requests.post(f"{url}/reset", json={"task_id": "phase_1"}, headers=API_HEADERS, timeout=10)
         for _ in range(25):
             response = requests.post(
                 f"{url}/step",
                 json={"action_type": "emit_signal", "signal_type": "test"},
+                headers=API_HEADERS,
                 timeout=10,
             )
             if response.json().get("done"):
@@ -154,6 +159,7 @@ def _check_boundaries(url: str, tally: Callable[[bool], None]) -> None:
         after_done = requests.post(
             f"{url}/step",
             json={"action_type": "emit_signal", "signal_type": "test"},
+            headers=API_HEADERS,
             timeout=10,
         )
         tally(check("Step after done returns done=True", after_done.json().get("done") is True))
@@ -177,8 +183,11 @@ def _check_schema(url: str, tally: Callable[[bool], None]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--api-url", default="http://localhost:7860")
+    parser.add_argument("--api-key", default=os.environ.get("CODEORGANISM_API_KEY") or os.environ.get("CODEORGANISM_API_KEYS", "").split(",", 1)[0])
     args = parser.parse_args()
     url = args.api_url.rstrip("/")
+    if args.api_key:
+        API_HEADERS["x-api-key"] = args.api_key
 
     passed = 0
     failed = 0
@@ -206,16 +215,16 @@ def main() -> None:
     _check_boundaries(url, tally)
     _check_schema(url, tally)
 
-    all_checks_passed = failed == 0 and passed == total
     print(f"\n{sep}")
     print(f"  Results: {passed}/{total} passed, {failed} failed")
-    if all_checks_passed:
-        print("  \033[92mALL CHECKS PASSED — ready for submission!\033[0m")
-    else:
-        print(f"  \033[91m{failed} CHECKS FAILED — fix before submitting\033[0m")
+    exit_code = min(failed, 1)
+    status_messages = {
+        0: "  \033[92mALL CHECKS PASSED — ready for submission!\033[0m",
+        1: f"  \033[91m{failed} CHECKS FAILED — fix before submitting\033[0m",
+    }
+    print(status_messages[exit_code])
     print(f"{sep}\n")
-    sys.exit(0 if all_checks_passed else 1)
+    sys.exit(exit_code)
 
 
-if __name__ == "__main__":
-    main()
+main()

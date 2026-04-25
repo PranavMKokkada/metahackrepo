@@ -15,15 +15,25 @@ from models import Action, Observation, StepResult, EnvState
 class SREEnvClient:
     """Standard HTTP Client for SRE Environment (spec §9.3)."""
 
-    def __init__(self, base_url: str = "http://localhost:7860"):
+    def __init__(self, base_url: str = "http://localhost:7860", api_key: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
         self.session_id: Optional[str] = None
+        self.api_key = api_key or os.environ.get("CODEORGANISM_API_KEY") or os.environ.get("CODEORGANISM_API_KEYS", "").split(",", 1)[0]
+
+    def _headers(self) -> Dict[str, str]:
+        headers: Dict[str, str] = {}
+        if self.api_key:
+            headers["x-api-key"] = self.api_key
+        if self.session_id:
+            headers["x-session-id"] = self.session_id
+        return headers
 
     def reset(self, task_id: str = "phase_1") -> Observation:
         """Provision a fresh cluster and start incident response."""
         resp = requests.post(
             f"{self.base_url}/reset",
-            json={"task_id": task_id}
+            json={"task_id": task_id},
+            headers=self._headers(),
         )
         resp.raise_for_status()
         data = resp.json()
@@ -33,7 +43,8 @@ class SREEnvClient:
         """Submit a remediation protocol to the cluster."""
         resp = requests.post(
             f"{self.base_url}/step",
-            json=action.model_dump()
+            json=action.model_dump(),
+            headers=self._headers(),
         )
         resp.raise_for_status()
         data = resp.json()
@@ -41,7 +52,7 @@ class SREEnvClient:
 
     def state(self) -> EnvState:
         """Retrieve the current SLA and infrastructure state."""
-        resp = requests.get(f"{self.base_url}/state")
+        resp = requests.get(f"{self.base_url}/state", headers=self._headers())
         resp.raise_for_status()
         data = resp.json()
         return EnvState(**data)

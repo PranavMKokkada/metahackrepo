@@ -48,6 +48,7 @@ logs/
 *.tmp
 *.temp
 temp/
+tmp_pytest/
 
 # Development
 .cache/

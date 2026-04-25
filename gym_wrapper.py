@@ -96,7 +96,7 @@ class CodeOrganismGymEnv(gym.Env):
         action = self._action_from_index(action_idx, target_path)
         
         result = self._env.step(action)
-        obs_vec = self._get_obs_vec(result.observation)
+        obs_vec = self._get_obs_vec(result.observation or self._env._make_observation())
         
         return (
             obs_vec,

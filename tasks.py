@@ -92,6 +92,7 @@ def run_grader(task_id: str, actions: List[dict]) -> dict:
             per_step.append({"error": str(e)})
             continue
 
+        previous_watchdog_violations = env._watchdog_violations
         result = env.step(action)
         per_step.append({
             "timestep": len(per_step),
@@ -100,7 +101,7 @@ def run_grader(task_id: str, actions: List[dict]) -> dict:
             "vitality": round(env._vitality, 2),
         })
         total_reward += result.reward
-        watchdog_total += env._watchdog_violations
+        watchdog_total += env._watchdog_violations - previous_watchdog_violations
 
         if result.done:
             break

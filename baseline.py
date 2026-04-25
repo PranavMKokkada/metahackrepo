@@ -63,7 +63,9 @@ def build_user_prompt(observation: dict) -> str:
 
 
 def run_task(client: OpenAI, api_url: str, task_id: str, model: str) -> dict:
-    resp = requests.post(f"{api_url}/reset", json={"task_id": task_id})
+    api_key = os.environ.get("CODEORGANISM_API_KEY") or os.environ.get("CODEORGANISM_API_KEYS", "").split(",", 1)[0]
+    headers = {"x-api-key": api_key} if api_key else {}
+    resp = requests.post(f"{api_url}/reset", json={"task_id": task_id}, headers=headers)
     resp.raise_for_status()
     obs = resp.json()
 
@@ -96,7 +98,7 @@ def run_task(client: OpenAI, api_url: str, task_id: str, model: str) -> dict:
             action = {"action_type": "do_nothing"}
 
         actions.append(action)
-        step_resp = requests.post(f"{api_url}/step", json=action)
+        step_resp = requests.post(f"{api_url}/step", json=action, headers=headers)
         step_resp.raise_for_status()
         step_result = step_resp.json()
 
@@ -105,7 +107,7 @@ def run_task(client: OpenAI, api_url: str, task_id: str, model: str) -> dict:
             obs = step_result["observation"]
 
     grader_resp = requests.post(
-        f"{api_url}/grader", json={"task_id": task_id, "actions": actions}
+        f"{api_url}/grader", json={"task_id": task_id, "actions": actions}, headers=headers
     )
     grader_resp.raise_for_status()
     return grader_resp.json()

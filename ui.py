@@ -186,7 +186,7 @@ def process_protocol(
     except Exception as exc:
         return None, None, f"### ⚠️ PROTOCOL ERROR\n{exc}", "IDLE", "FAILURE", {}, [], ""
 
-    obs = result.observation
+    obs = result.observation or env._make_observation()
     state = env.state()
     sre = result.info.get("sre_metrics", {"confidence": 0, "risk_assessment": "High", "downtime_saved_total": 0})
     status_line = f"**STEP:** {obs.timestep} | **CUMULATIVE_EFFICIENCY:** {state.cumulative_reward:.4f}"
