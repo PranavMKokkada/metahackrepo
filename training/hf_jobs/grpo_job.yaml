@@ -1,0 +1,21 @@
+name: autonomous-sre-grpo
+flavor: t4-small
+command: >
+  python training/grpo_train.py
+  --mode grpo
+  --run-gpu
+  --model-id ${MODEL_ID}
+  --dataset-path training/sft_data.jsonl
+  --output-dir results/grpo_run
+  --max-seq-length 2048
+  --max-steps 120
+  --learning-rate 2e-4
+  --per-device-train-batch-size 2
+  --gradient-accumulation-steps 4
+  --warmup-steps 10
+  --logging-steps 5
+  --save-steps 40
+  --lora-r 16
+  --lora-alpha 16
+env:
+  MODEL_ID: unsloth/llama-3-8b-Instruct-bnb-4bit

@@ -9,15 +9,18 @@ Format: List of records {system_prompt, user_prompt, reasoning, action_json}
 from __future__ import annotations
 
 import json
-import random
 import os
 import sys
+from secrets import SystemRandom
+from typing import Any
 
 # Add parent dir to path to import environment
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from environment import CodeOrganismEnv, VITALITY_COSTS
+from environment import CodeOrganismEnv
 from models import Action, CodeOrganismActionType
+
+RUNTIME_RNG = SystemRandom()
 
 SYSTEM_PROMPT = """You are an LLM agent living inside a broken, hostile execution environment.
 The environment continuously injects faults. You must self-heal to survive.
@@ -61,7 +64,7 @@ def solve_fault(env: CodeOrganismEnv, fault: Any) -> Action | None:
 
 def generate_trace():
     env = CodeOrganismEnv()
-    phase = random.choice(["phase_1", "phase_2"])
+    phase = RUNTIME_RNG.choice(["phase_1", "phase_2"])
     obs = env.reset(phase)
     
     trace = []

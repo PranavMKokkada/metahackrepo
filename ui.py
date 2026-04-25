@@ -10,6 +10,7 @@ import gradio as gr
 
 from models import Action, CodeOrganismActionType
 from environment import CodeOrganismEnv
+from training.rollout import run_episode
 
 
 CUSTOM_CSS = """
@@ -135,6 +136,26 @@ def _format_alerts(alerts: list[str]) -> str:
     )
 
 
+def _format_episode_postmortem(trace: dict[str, Any]) -> str:
+    actions = trace.get("actions", [])[:8]
+    timeline = "\n".join(
+        f"- step {a['step']}: `{a['action_type']}` reward={a['reward']}"
+        for a in actions
+    ) or "- no actions logged"
+    return (
+        "### 📄 Episode Postmortem\n"
+        f"- Policy: `{trace.get('policy')}`\n"
+        f"- Task: `{trace.get('task_id')}`\n"
+        f"- Seed: `{trace.get('seed')}`\n"
+        f"- Termination: `{trace.get('termination')}`\n"
+        f"- Survived: `{trace.get('survived')}`\n"
+        f"- Total Reward: `{trace.get('total_reward')}`\n"
+        f"- Final Vitality: `{trace.get('final_vitality')}`\n"
+        "\n### ⏱ Timeline\n"
+        f"{timeline}"
+    )
+
+
 def reset_center(env: CodeOrganismEnv, task_id: str):
     obs = env.reset(task_id)
     return (
@@ -146,6 +167,7 @@ def reset_center(env: CodeOrganismEnv, task_id: str):
         obs.dependency_graph,
         obs.recent_signals,
         [],
+        "### 📄 Episode Postmortem\nNo episode replay yet.",
     )
 
 
@@ -156,6 +178,15 @@ def trigger_chaos(env: CodeOrganismEnv):
         get_sla_html(state.vitality),
         f"### 🚨 CHAOS ENGINE ACTIVATED\n{msg}\nInjecting failure vectors...",
         [],
+    )
+
+
+def run_demo_episode(task_id: str, policy: str):
+    seed = 104857 if task_id == "phase_3" else 11000
+    trace = run_episode(policy=policy, task_id=task_id, seed=seed).to_dict()
+    return (
+        _format_episode_postmortem(trace),
+        f"### ✅ Demo run complete\nPolicy `{policy}` on `{task_id}` finished.",
     )
 
 
@@ -184,9 +215,9 @@ def process_protocol(
         )
         result = env.step(action)
     except Exception as exc:
-        return None, None, f"### ⚠️ PROTOCOL ERROR\n{exc}", "IDLE", "FAILURE", {}, [], ""
+        return None, None, f"### ⚠️ PROTOCOL ERROR\n{exc}", "IDLE", "FAILURE", {}, [], "", "### 📄 Episode Postmortem\nProtocol failed."
 
-    obs = result.observation
+    obs = result.observation or env._make_observation()
     state = env.state()
     sre = result.info.get("sre_metrics", {"confidence": 0, "risk_assessment": "High", "downtime_saved_total": 0})
     status_line = f"**STEP:** {obs.timestep} | **CUMULATIVE_EFFICIENCY:** {state.cumulative_reward:.4f}"
@@ -201,6 +232,7 @@ def process_protocol(
         obs.dependency_graph,
         obs.recent_signals,
         _format_alerts(obs.alerts or []),
+        result.info.get("postmortem") or "### 📄 Episode Postmortem\nIn progress...",
     )
 
 
@@ -223,6 +255,8 @@ def create_gradio_app() -> gr.Blocks:
                 gr.Markdown("<div class='metric-label'>System Log Feed</div>")
                 status_bar = gr.Markdown("Systems Standby.")
                 chaos_btn = gr.Button("🔥 TRIGGER CHAOS INCIDENT", elem_classes=["chaos-btn"])
+                run_noop_btn = gr.Button("▶️ RUN BASELINE EPISODE", elem_classes=["action-btn"])
+                run_heuristic_btn = gr.Button("▶️ RUN HEURISTIC EPISODE", elem_classes=["action-btn"])
 
         with gr.Row():
             with gr.Column(scale=1):
@@ -256,18 +290,30 @@ def create_gradio_app() -> gr.Blocks:
                         test_display = gr.Markdown("TELEMETRY_IDLE")
                     with gr.Tab("Error Trace"):
                         stack_display = gr.Markdown("", elem_classes=["terminal-output"])
+                    with gr.Tab("Episode Postmortem"):
+                        postmortem_display = gr.Markdown("### 📄 Episode Postmortem\nNo episode replay yet.")
 
         reset_btn.click(
             lambda task_id: reset_center(env, task_id),
             inputs=[task_dd],
-            outputs=[sla_display, impact_display, test_display, status_bar, stack_display, world_model_display, signals_display, alerts_display],
+            outputs=[sla_display, impact_display, test_display, status_bar, stack_display, world_model_display, signals_display, alerts_display, postmortem_display],
         )
         chaos_btn.click(lambda: trigger_chaos(env), outputs=[sla_display, stack_display, alerts_display])
+        run_noop_btn.click(
+            lambda task_id: run_demo_episode(task_id, "noop"),
+            inputs=[task_dd],
+            outputs=[postmortem_display, status_bar],
+        )
+        run_heuristic_btn.click(
+            lambda task_id: run_demo_episode(task_id, "heuristic"),
+            inputs=[task_dd],
+            outputs=[postmortem_display, status_bar],
+        )
         submit_btn.click(
             lambda action_type, path, diff, sub_task, checkpoint_id, query, signal_type, justification: process_protocol(
                 env, action_type, path, diff, sub_task, checkpoint_id, query, signal_type, justification
             ),
             inputs=[action_type, path_box, diff_box, sub_task_box, checkpoint_box, query_box, signal_box, justification_box],
-            outputs=[sla_display, impact_display, test_display, status_bar, stack_display, world_model_display, signals_display, alerts_display],
+            outputs=[sla_display, impact_display, test_display, status_bar, stack_display, world_model_display, signals_display, alerts_display, postmortem_display],
         )
     return demo

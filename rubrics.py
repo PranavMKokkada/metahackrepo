@@ -33,21 +33,47 @@ class SRERubricScorer:
         
         # R2: Recovery Success (Test Recovery)
         r2 = 0.0
+        recovered_count = 0
+        degraded_count = 0
         for t in current_tests:
-            if t.delta == 1:   r2 += 1.0 # FAIL -> PASS
-            elif t.delta == -1: r2 -= 0.5 # PASS -> FAIL
+            if t.delta == 1:
+                r2 += 1.0  # FAIL -> PASS
+                recovered_count += 1
+            elif t.delta == -1:
+                r2 -= 0.5  # PASS -> FAIL
+                degraded_count += 1
             
         # R3: Remediation Efficiency (1/sqrt(n))
         r3 = 1.0 / math.sqrt(max(1, action_count))
         if len(action_history) >= 2 and action_history[-1] == action_history[-2]:
-            r3 -= 0.3 # Duplicate penalty
+            r3 -= 0.3  # Duplicate penalty
+        if action.action_type in (CodeOrganismActionType.DO_NOTHING, CodeOrganismActionType.EMIT_SIGNAL):
+            r3 -= 0.2
+        if len(action_history) >= 3 and action_history[-3:] == [
+            CodeOrganismActionType.EMIT_SIGNAL.value,
+            CodeOrganismActionType.EMIT_SIGNAL.value,
+            CodeOrganismActionType.EMIT_SIGNAL.value,
+        ]:
+            r3 -= 0.6
             
         # R4: Teaming Bonus (Intent signaling & Delegation)
         r4 = 0.0
         if action.action_type == CodeOrganismActionType.PATCH_FILE:
             if active_intent == action.path:
-                r4 += 0.5 # Planning bonus
+                r4 += 0.5  # Planning bonus
+            if len(action_history) >= 2 and action_history[-2] == CodeOrganismActionType.EMIT_SIGNAL.value:
+                r4 += 0.2
+        if action.action_type == CodeOrganismActionType.EMIT_SIGNAL and recovered_count == 0:
+            r4 -= 0.2
         # (Subagent coordination r4 is handled in environment.py _handle_subagent)
+
+        # Reward useful action-outcome chains and penalize low-value loops.
+        if action.action_type == CodeOrganismActionType.RUN_TESTS and recovered_count > 0:
+            r2 += 0.25 * recovered_count
+        if action.action_type == CodeOrganismActionType.ROLLBACK and degraded_count > 0:
+            r2 += 0.2
+        if action.action_type == CodeOrganismActionType.QUARANTINE and degraded_count == 0 and recovered_count == 0:
+            r2 -= 0.25
         
         # R5: Architecture Generalization (Held-out seeds)
         r5 = 0.0

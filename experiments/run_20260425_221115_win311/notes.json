@@ -1,0 +1,23 @@
+{
+  "run_id": "run_20260425_221115_win311",
+  "python": "3.11 venv (.venv311)",
+  "status": {
+    "requirements.txt": "success",
+    ".training_original": "failed due to unsloth/xformers resolution on Windows",
+    ".training_win311": "success",
+    "pytest": "61 passed, 1 warning",
+    "evaluation": "success",
+    "plots": "success"
+  },
+  "commands": [
+    "py -3.11 -m venv .venv311",
+    ".venv311\\Scripts\\python -m pip install -r requirements.txt",
+    ".venv311\\Scripts\\python -m pip install -r requirements-training.txt (failed expected)",
+    ".venv311\\Scripts\\python -m pip install -r requirements-training-win311.txt",
+    ".venv311\\Scripts\\python -m pytest -q",
+    ".venv311\\Scripts\\python training/evaluate_policy.py --policies noop random heuristic stabilized sft --episodes-per-phase 6 --out-dir results",
+    ".venv311\\Scripts\\python -m pip install matplotlib",
+    ".venv311\\Scripts\\python training/plot_results.py --results-dir results --summary results/eval_summary.json",
+    ".venv311\\Scripts\\python evaluation/run_eval.py"
+  ]
+}

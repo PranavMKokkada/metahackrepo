@@ -20,8 +20,9 @@ from __future__ import annotations
 import json
 import math
 import os
+import time
 import uuid
-import random
+from secrets import SystemRandom
 from typing import Optional, Dict, List, Any
 
 # Standard OpenEnv Core (spec §30)
@@ -66,6 +67,12 @@ PHASE_CONFIG = {
     "phase_3": {"max_steps": 100, "fault_interval": 4, "initial_faults": 4, "phase_num": 3},
 }
 
+INCIDENT_SCENARIO_CARDS = {
+    1: "SEV-2 API latency spike after minor config drift; objective: restore baseline health quickly.",
+    2: "SEV-1 cascading service degradation across auth/queue/cache paths; objective: contain blast radius.",
+    3: "ADVERSARIAL regression campaign targeting recent fixes; objective: survive while preserving safety.",
+}
+
 # ── Watchdog penalties (spec §6.2) ─────────────────────────────────────────────
 
 WATCHDOG_PROTECTED_FILE_PENALTY = -10.0
@@ -75,6 +82,7 @@ WATCHDOG_ESCAPE_PENALTY = -15.0
 
 AUTO_CHECKPOINT_INTERVAL = 5   # Spec: every 5 steps
 MAX_QUARANTINED_FREE = 3       # Spec §10: >3 quarantines → tax
+RUNTIME_RNG = SystemRandom()
 
 
 class CodeOrganismEnv:
@@ -114,7 +122,7 @@ class CodeOrganismEnv:
 
     # ── OpenEnv API ────────────────────────────────────────────────────────
 
-    def reset(self, task_id: str = "phase_1") -> Observation:
+    def reset(self, task_id: str = "phase_1", seed: Optional[int] = None) -> Observation:
         """Generate a fresh broken codebase (spec §4.4)."""
         self._task_id = task_id
         cfg = PHASE_CONFIG.get(task_id, PHASE_CONFIG["phase_1"])
@@ -122,9 +130,13 @@ class CodeOrganismEnv:
         self._max_steps = cfg["max_steps"]
         self._fault_interval = cfg["fault_interval"]
 
-        self._episode_id = random.randint(0, 100000)
-        seed = get_curriculum_seed(self._phase_num, self._episode_id)
-        self._simulator = CodebaseSimulator(seed, phase=self._phase_num)
+        if seed is None:
+            self._episode_id = RUNTIME_RNG.randint(0, 100000)
+            simulator_seed = get_curriculum_seed(self._phase_num, self._episode_id)
+        else:
+            simulator_seed = int(seed)
+            self._episode_id = simulator_seed
+        self._simulator = CodebaseSimulator(simulator_seed, phase=self._phase_num)
 
         # Initial faults
         for _ in range(cfg["initial_faults"]):
@@ -150,6 +162,8 @@ class CodeOrganismEnv:
         self._total_downtime_saved = 0.0
         self._last_action_confidence = 0.0
         self._last_action_risk = "Low"
+        scenario = INCIDENT_SCENARIO_CARDS.get(self._phase_num, INCIDENT_SCENARIO_CARDS[1])
+        self._step_alerts = [f"INCIDENT_CARD: {scenario}"]
 
         # Auto-checkpoint at step 0
         self._simulator.create_checkpoint(self._vitality, 0)
@@ -212,9 +226,9 @@ class CodeOrganismEnv:
 
         # SRE Explainability Simulation
         self._last_action_confidence = (
-            0.8 + (random.random() * 0.15)
+            0.8 + (RUNTIME_RNG.random() * 0.15)
             if breakdown.total > 0
-            else 0.4 + (random.random() * 0.3)
+            else 0.4 + (RUNTIME_RNG.random() * 0.3)
         )
         self._last_action_risk = self._risk_from_confidence(self._last_action_confidence)
 
@@ -232,6 +246,7 @@ class CodeOrganismEnv:
             info={
                 **info, 
                 "action_result": action_info,
+                "postmortem": self._episode_postmortem(info.get("termination", "running")) if self._done else None,
                 "sre_metrics": {
                     "confidence": round(self._last_action_confidence, 2),
                     "risk_assessment": self._last_action_risk,
@@ -314,9 +329,35 @@ class CodeOrganismEnv:
             return {"termination": "timeout_death"}
         return {}
 
+    def _current_slo_metrics(self) -> Dict[str, float]:
+        tests = self._last_test_results or []
+        total_tests = max(1, len(tests))
+        passing = sum(1 for t in tests if t.status == "PASS")
+        failing = total_tests - passing
+        availability = round((passing / total_tests) * 100.0, 2)
+        error_rate = round((failing / total_tests) * 100.0, 2)
+        p95_latency_ms = round(120.0 + (error_rate * 8.0) + max(0.0, 100.0 - self._vitality), 2)
+        blast_radius = round((len(self._simulator.faults) / total_tests) * 100.0, 2) if self._simulator else 0.0
+        return {
+            "availability_pct": availability,
+            "error_rate_pct": error_rate,
+            "p95_latency_ms": p95_latency_ms,
+            "blast_radius_pct": blast_radius,
+            "incident_severity": round(min(100.0, error_rate + (100.0 - self._vitality)), 2),
+        }
+
+    def _episode_postmortem(self, termination: str) -> str:
+        slo = self._current_slo_metrics()
+        return (
+            f"termination={termination}; vitality={round(self._vitality, 2)}; "
+            f"availability={slo['availability_pct']}%; error_rate={slo['error_rate_pct']}%; "
+            f"p95_latency_ms={slo['p95_latency_ms']}; watchdog_violations={self._watchdog_violations}; "
+            f"faults_remaining={len(self._simulator.faults) if self._simulator else 0}"
+        )
+
     def state(self) -> EnvState:
         """Current lifecycle state."""
-        current_tests = self._simulator.run_all_tests() if self._simulator else []
+        current_tests = self._last_test_results if self._simulator else []
         return EnvState(
             task_id=self._task_id,
             vitality=round(self._vitality, 2),
@@ -397,7 +438,7 @@ class CodeOrganismEnv:
             return
 
     def _handle_quarantine_action(self, action: Action) -> dict:
-        module = action.module or ""
+        module = action.module or action.path or ""
         if not module:
             return {"result": "error", "message": "module required."}
         info = self._simulator.quarantine_module(module)
@@ -437,11 +478,11 @@ class CodeOrganismEnv:
             return {"result": "subagent_complete", "success": False, "necessary_delegation": False, "detail": result.detail}
 
         # Spec §10 Edge Case: OOM in subagent sandbox
-        if random.random() < 0.05:
+        if RUNTIME_RNG.random() < 0.05:
             result = SubagentResult(
                 task=task_desc,
                 success=False,
-                actions_taken=random.randint(1, 5),
+                actions_taken=RUNTIME_RNG.randint(1, 5),
                 tests_fixed=0,
                 vitality_delta=-1.0,
                 detail="SUBAGENT_OOM: Subagent exceeded 512MB memory cap.",
@@ -458,7 +499,7 @@ class CodeOrganismEnv:
         repairable_faults = [f for f in sim.faults if f.fault_type in ("corrupted_import", "null_return", "targeted_regression")]
         is_necessary = len(repairable_faults) >= 2  # Necessary if multiple faults exist
 
-        if repairable_faults and random.random() < 0.7:
+        if repairable_faults and RUNTIME_RNG.random() < 0.7:
             fault = repairable_faults[0]
             if fault.target in sim.files:
                 sim.files[fault.target] = fault.original_value
@@ -471,7 +512,7 @@ class CodeOrganismEnv:
         result = SubagentResult(
             task=task_desc,
             success=success,
-            actions_taken=random.randint(2, 10),
+            actions_taken=RUNTIME_RNG.randint(2, 10),
             tests_fixed=tests_fixed,
             vitality_delta=2.0 if success else -1.0,
             detail=detail or "Subagent could not resolve the task.",
@@ -569,6 +610,11 @@ class CodeOrganismEnv:
             watchdog_flags=self._watchdog_flags,
             dependency_graph=sim.get_dependency_graph(),
             alerts=self._step_alerts,
+            slo_metrics=self._current_slo_metrics(),
+            incident_summary=(
+                f"phase={self._phase_num}; active_faults={len(sim.faults)}; "
+                f"watchdog_violations={self._watchdog_violations}; step={self._step}"
+            ),
         )
 
     @staticmethod
@@ -585,27 +631,60 @@ class CodeOrganismEnv:
 class SessionManager:
     """Manages multiple concurrent environment sessions."""
 
-    def __init__(self) -> None:
+    def __init__(self, max_sessions: int | None = None, ttl_seconds: int | None = None) -> None:
         self._sessions: Dict[str, CodeOrganismEnv] = {}
+        self._last_accessed: Dict[str, float] = {}
+        self._max_sessions = max_sessions or int(os.environ.get("CODEORGANISM_MAX_SESSIONS", "64"))
+        self._ttl_seconds = ttl_seconds or int(os.environ.get("CODEORGANISM_SESSION_TTL_SECONDS", "3600"))
         self._default_id = "default"
         self._sessions[self._default_id] = CodeOrganismEnv()
+        self._last_accessed[self._default_id] = time.monotonic()
 
     def create_session(self) -> str:
+        self._prune_sessions()
         session_id = uuid.uuid4().hex[:12]
         self._sessions[session_id] = CodeOrganismEnv()
+        self._last_accessed[session_id] = time.monotonic()
+        self._enforce_session_limit()
         return session_id
 
     def get(self, session_id: str | None = None) -> CodeOrganismEnv:
+        self._prune_sessions()
         sid = session_id or self._default_id
         if sid not in self._sessions:
+            self._enforce_session_limit(reserve=1)
             self._sessions[sid] = CodeOrganismEnv()
+        self._last_accessed[sid] = time.monotonic()
         return self._sessions[sid]
 
     def delete(self, session_id: str) -> bool:
         if session_id in self._sessions and session_id != self._default_id:
             del self._sessions[session_id]
+            self._last_accessed.pop(session_id, None)
             return True
         return False
 
     def list_sessions(self) -> List[str]:
+        self._prune_sessions()
         return list(self._sessions.keys())
+
+    def _prune_sessions(self) -> None:
+        cutoff = time.monotonic() - self._ttl_seconds
+        expired = [
+            sid for sid, last_accessed in self._last_accessed.items()
+            if sid != self._default_id and last_accessed < cutoff
+        ]
+        for sid in expired:
+            self.delete(sid)
+
+    def _enforce_session_limit(self, reserve: int = 0) -> None:
+        while len(self._sessions) + reserve > self._max_sessions:
+            candidates = [
+                (last_accessed, sid)
+                for sid, last_accessed in self._last_accessed.items()
+                if sid != self._default_id
+            ]
+            if not candidates:
+                break
+            _, oldest_sid = min(candidates)
+            self.delete(oldest_sid)

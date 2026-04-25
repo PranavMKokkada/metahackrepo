@@ -10,16 +10,13 @@ from __future__ import annotations
 
 import hashlib
 import copy
-import math
+import ast
+import builtins
 import random
-import time
 import os
-import tempfile
-import subprocess
 import json
-import stat
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any, Set
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Any, Set, Callable
 
 from models import FileEntry, TestResult
 
@@ -33,6 +30,10 @@ NETWORK_PATH = "src/network.py"
 CACHE_PATH = "src/cache.py"
 VALIDATOR_PATH = "src/validator.py"
 TRANSFORM_PATH = "src/transform.py"
+API_GATEWAY_PATH = "src/api_gateway.py"
+AUTH_SERVICE_PATH = "src/auth_service.py"
+QUEUE_WORKER_PATH = "src/queue_worker.py"
+DEPLOYMENT_CONTROLLER_PATH = "src/deployment_controller.py"
 CONFIG_PATH = "schema/config.json"
 PERMISSIONS_PATH = "schema/permissions.json"
 
@@ -210,6 +211,39 @@ _MODULE_TEMPLATES = [
         "        groups.setdefault(k, []).append(item)",
         "    return groups",
     ]),
+    (API_GATEWAY_PATH, [
+        "def route_request(path, auth_ok=True):",
+        "    if not auth_ok:",
+        "        return {'status': 401, 'latency_ms': 35}",
+        "    if path == '/health':",
+        "        return {'status': 200, 'latency_ms': 8}",
+        "    return {'status': 200, 'latency_ms': 45}",
+    ]),
+    (AUTH_SERVICE_PATH, [
+        "def validate_token(token):",
+        "    return isinstance(token, str) and token.startswith('tok_') and len(token) > 8",
+        "",
+        "def issue_token(user_id):",
+        "    return f'tok_{user_id}_signed'",
+    ]),
+    (QUEUE_WORKER_PATH, [
+        "def process_job(job, max_retries=3):",
+        "    retries = 0",
+        "    while retries < max_retries:",
+        "        if job.get('ok', True):",
+        "            return {'status': 'done', 'retries': retries}",
+        "        retries += 1",
+        "    return {'status': 'failed', 'retries': retries}",
+    ]),
+    (DEPLOYMENT_CONTROLLER_PATH, [
+        "def canary_decision(error_rate, threshold=0.05):",
+        "    return 'rollback' if error_rate > threshold else 'promote'",
+        "",
+        "def blast_radius(affected, total):",
+        "    if total <= 0:",
+        "        return 0.0",
+        "    return affected / total",
+    ]),
     (CONFIG_PATH, [
         '{"version": "1.0", "threshold": 0.8, "max_retries": 3, "timeout": 30}',
     ]),
@@ -271,6 +305,38 @@ def _generate_tests_for_modules(modules: Dict[str, str]) -> Dict[str, Dict[str, 
         tests["test_flatten"] = {"code": "assert flatten([[1,2],[3,[4]]]) == [1,2,3,4]", "file": TRANSFORM_PATH}
         tests["test_group_by"] = {"code": "g = group_by([1,2,3,4], lambda x: x % 2); assert len(g) == 2", "file": TRANSFORM_PATH}
 
+    if API_GATEWAY_PATH in modules:
+        tests["test_latency_budget"] = {
+            "code": "res = route_request('/health', auth_ok=True); assert res['latency_ms'] <= 20",
+            "file": API_GATEWAY_PATH,
+        }
+        tests["test_gateway_auth_block"] = {
+            "code": "res = route_request('/orders', auth_ok=False); assert res['status'] == 401",
+            "file": API_GATEWAY_PATH,
+        }
+
+    if AUTH_SERVICE_PATH in modules:
+        tests["test_auth_token_validation"] = {
+            "code": "assert validate_token(issue_token('u123'))",
+            "file": AUTH_SERVICE_PATH,
+        }
+
+    if QUEUE_WORKER_PATH in modules:
+        tests["test_retry_policy"] = {
+            "code": "res = process_job({'ok': False}, max_retries=2); assert res['retries'] == 2",
+            "file": QUEUE_WORKER_PATH,
+        }
+
+    if DEPLOYMENT_CONTROLLER_PATH in modules:
+        tests["test_circuit_breaker_decision"] = {
+            "code": "assert canary_decision(0.20, threshold=0.05) == 'rollback'",
+            "file": DEPLOYMENT_CONTROLLER_PATH,
+        }
+        tests["test_blast_radius_metric"] = {
+            "code": "assert blast_radius(2, 10) == 0.2",
+            "file": DEPLOYMENT_CONTROLLER_PATH,
+        }
+
     if CONFIG_PATH in modules:
         tests["test_config_version"] = {"code": f"import json; cfg = json.loads(open('{CONFIG_PATH}').read()); assert cfg['version'] == '1.0'", "file": CONFIG_PATH}
         tests["test_config_threshold"] = {"code": f"import json; cfg = json.loads(open('{CONFIG_PATH}').read()); assert cfg['threshold'] == 0.8", "file": CONFIG_PATH}
@@ -287,6 +353,57 @@ PROTECTED_PATTERNS = {
     "test", "pytest", "spec", "__pycache__", ".git", ".pytest_cache", "Dockerfile", "requirements.txt", ".env"
 }
 
+SAFE_IMPORT_MODULES = {"json", "os"}
+SAFE_BUILTINS = {
+    "Exception": Exception,
+    "False": False,
+    "True": True,
+    "None": None,
+    "__build_class__": builtins.__build_class__,
+    "bool": bool,
+    "dict": dict,
+    "enumerate": enumerate,
+    "float": float,
+    "int": int,
+    "isinstance": isinstance,
+    "len": len,
+    "list": list,
+    "max": max,
+    "min": min,
+    "range": range,
+    "set": set,
+    "str": str,
+    "sum": sum,
+    "tuple": tuple,
+    "object": object,
+}
+DANGEROUS_CALLS = {
+    "compile",
+    "eval",
+    "exec",
+    "globals",
+    "input",
+    "locals",
+    "open",
+    "__import__",
+}
+DANGEROUS_ATTRS = {
+    "os.system",
+    "os.popen",
+    "os.remove",
+    "os.unlink",
+    "os.rmdir",
+    "os.removedirs",
+    "os.rename",
+    "os.replace",
+    "os.chmod",
+    "os.chown",
+    "os.execv",
+    "os.execve",
+    "os.spawnv",
+    "os.spawnve",
+}
+
 def is_protected_path(path: str) -> bool:
     """Check if a path is in a protected zone (simulating OverlayFS read-only zones)."""
     # 1. Directory traversal detection (Sandbox escape attempt)
@@ -299,6 +416,77 @@ def is_protected_path(path: str) -> bool:
         return True
         
     return False
+
+
+class UnsafeCodeError(ValueError):
+    """Raised when generated code violates the simulator safety policy."""
+
+
+class _InMemoryFile:
+    def __init__(self, content: str) -> None:
+        self._content = content
+
+    def read(self) -> str:
+        return self._content
+
+    def __enter__(self) -> "_InMemoryFile":
+        return self
+
+    def __exit__(self, *_args: Any) -> None:
+        return None
+
+
+class _SafeCodeValidator(ast.NodeVisitor):
+    """Small allowlist validator for synthetic module/test code."""
+
+    def __init__(self, allow_schema_open: bool = False) -> None:
+        self._allow_schema_open = allow_schema_open
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            if alias.name.split(".", 1)[0] not in SAFE_IMPORT_MODULES:
+                raise UnsafeCodeError(f"Import not allowed: {alias.name}")
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        module = node.module or ""
+        if module.split(".", 1)[0] not in SAFE_IMPORT_MODULES:
+            raise UnsafeCodeError(f"Import not allowed: {module}")
+
+    def visit_Call(self, node: ast.Call) -> None:
+        name = self._call_name(node.func)
+        if name == "open" and self._allow_schema_open and self._is_schema_open(node):
+            self.generic_visit(node)
+            return
+        if name in DANGEROUS_CALLS or name in DANGEROUS_ATTRS:
+            raise UnsafeCodeError(f"Call not allowed: {name}")
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        name = self._call_name(node)
+        if name in DANGEROUS_ATTRS:
+            raise UnsafeCodeError(f"Attribute not allowed: {name}")
+        self.generic_visit(node)
+
+    @classmethod
+    def _call_name(cls, node: ast.AST) -> str:
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            parent = cls._call_name(node.value)
+            return f"{parent}.{node.attr}" if parent else node.attr
+        return ""
+
+    @staticmethod
+    def _is_schema_open(node: ast.Call) -> bool:
+        if not node.args or not isinstance(node.args[0], ast.Constant):
+            return False
+        path = node.args[0].value
+        return isinstance(path, str) and path.replace("\\", "/").startswith("schema/")
+
+
+def _validate_safe_code(source: str, allow_schema_open: bool = False) -> None:
+    tree = ast.parse(source)
+    _SafeCodeValidator(allow_schema_open=allow_schema_open).visit(tree)
 
 
 # ── CodebaseSimulator ──────────────────────────────────────────────────────────
@@ -523,41 +711,39 @@ class CodebaseSimulator:
     # ── Patch application ──────────────────────────────────────────────────
 
     def apply_patch(self, path: str, diff: str, step: int = 0) -> bool:
-        """Apply a patch. Format: 'OLD_TEXT|NEW_TEXT' or full overwrite."""
+        """Apply a constrained OLD_TEXT|NEW_TEXT patch."""
         if path not in self.files:
             return False
+        if "|" not in diff:
+            return False
 
-        applied = False
-        if "|" in diff:
-            old, new = diff.split("|", 1)
-            if old in self.files[path]:
-                self.files[path] = self.files[path].replace(old, new, 1)
-                applied = True
-        else:
-            self.files[path] = diff
-            applied = True
+        old, new = diff.split("|", 1)
+        if old not in self.files[path]:
+            return False
 
-        if applied:
-            self._file_modified_at[path] = step
-            # Track both full path and module name for P3 adaptive targeting
-            if path not in self.last_patched_modules:
-                self.last_patched_modules.append(path)
-            if len(self.last_patched_modules) > 5:
-                self.last_patched_modules.pop(0)
+        patched = self.files[path].replace(old, new, 1)
+        if path.endswith(".py"):
+            try:
+                _validate_safe_code(patched)
+            except (SyntaxError, UnsafeCodeError):
+                return False
 
-        return applied
+        self.files[path] = patched
+
+        self._file_modified_at[path] = step
+        if path not in self.last_patched_modules:
+            self.last_patched_modules.append(path)
+        if len(self.last_patched_modules) > 5:
+            self.last_patched_modules.pop(0)
+
+        return True
 
     # ── Test execution ─────────────────────────────────────────────────────
 
     def run_all_tests(self) -> List[TestResult]:
-        """Execute all tests in a sandboxed directory to ensure 100% architectural accuracy.
-        Simulates OverlayFS read-only mounts and true isolation.
-        """
+        """Execute generated tests through a constrained in-process evaluator."""
         corrupted_files = self._collect_corrupted_files()
-        with tempfile.TemporaryDirectory() as temp_dir:
-            self._write_source_modules(temp_dir)
-            test_file_paths = self._write_test_files(temp_dir)
-            return self._execute_tests(temp_dir, test_file_paths, corrupted_files)
+        return self._execute_tests(corrupted_files)
 
     def _collect_corrupted_files(self) -> Set[str]:
         corrupted_files: Set[str] = set()
@@ -585,61 +771,11 @@ class CodebaseSimulator:
                 dependents.add(path)
         return dependents
 
-    def _write_source_modules(self, temp_dir: str) -> None:
-        for path, content in self.files.items():
-            if path in self.quarantined_modules:
-                continue
-            full_path = os.path.join(temp_dir, path)
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
-            with open(full_path, "w", encoding="utf-8") as file_handle:
-                file_handle.write(content)
-
-    def _write_test_files(self, temp_dir: str) -> List[tuple[str, str, str]]:
-        test_file_paths: List[tuple[str, str, str]] = []
+    def _execute_tests(self, corrupted_files: Set[str]) -> List[TestResult]:
+        test_results: List[TestResult] = []
+        module_cache: Dict[str, Dict[str, Any]] = {}
         for name, data in self.tests.items():
             target_file = data["file"]
-            wrapped_code = self._build_wrapped_test_code(temp_dir, target_file, data["code"])
-            test_path = os.path.join(temp_dir, f"__test_{name}.py")
-            with open(test_path, "w", encoding="utf-8") as file_handle:
-                file_handle.write(wrapped_code)
-            self._set_read_only(test_path)
-            test_file_paths.append((name, test_path, target_file))
-        return test_file_paths
-
-    def _build_wrapped_test_code(self, temp_dir: str, target_file: str, test_code: str) -> str:
-        import_stmt = ""
-        if target_file.endswith(".py"):
-            module_path = target_file.replace("/", ".").replace(".py", "")
-            import_stmt = f"from {module_path} import *"
-        safe_temp_dir = temp_dir.replace("\\", "\\\\")
-        indented_test = "\n".join(f"    {line}" for line in test_code.split("\n"))
-        return f"""
-import sys
-import os
-sys.path.insert(0, '{safe_temp_dir}')
-{import_stmt}
-try:
-{indented_test}
-    print("PASS")
-except Exception as e:
-    print(f"FAIL|{{type(e).__name__}}: {{e}}")
-"""
-
-    @staticmethod
-    def _set_read_only(test_path: str) -> None:
-        try:
-            os.chmod(test_path, stat.S_IRUSR)
-        except OSError:
-            pass
-
-    def _execute_tests(
-        self,
-        temp_dir: str,
-        test_file_paths: List[tuple[str, str, str]],
-        corrupted_files: Set[str],
-    ) -> List[TestResult]:
-        test_results: List[TestResult] = []
-        for name, test_path, target_file in test_file_paths:
             quarantine_result = self._maybe_quarantine_result(name, target_file)
             if quarantine_result:
                 test_results.append(quarantine_result)
@@ -648,7 +784,7 @@ except Exception as e:
                 reason = f"Error: {target_file} is corrupted by active fault"
                 test_results.append(TestResult(name=name, status="FAIL", message=reason))
                 continue
-            test_results.append(self._run_single_test(name, test_path, temp_dir))
+            test_results.append(self._run_single_test(name, target_file, data["code"], module_cache))
         return test_results
 
     def _maybe_quarantine_result(self, name: str, target_file: str) -> Optional[TestResult]:
@@ -657,27 +793,78 @@ except Exception as e:
             return TestResult(name=name, status="ERROR", message="Module quarantined")
         return None
 
-    def _run_single_test(self, name: str, test_path: str, temp_dir: str) -> TestResult:
-        env = os.environ.copy()
-        env.update(self.env_vars)
+    def _run_single_test(
+        self,
+        name: str,
+        target_file: str,
+        test_code: str,
+        module_cache: Dict[str, Dict[str, Any]],
+    ) -> TestResult:
         try:
-            process = subprocess.run(
-                ["python", test_path],
-                capture_output=True,
-                text=True,
-                env=env,
-                cwd=temp_dir,
-                timeout=2,
-            )
-            output = process.stdout.strip()
-            if output == "PASS":
-                return TestResult(name=name, status="PASS", message="OK")
-            msg = output.split("|")[1] if "|" in output else process.stderr.strip() or "Unknown Error"
-            return TestResult(name=name, status="FAIL", message=msg)
-        except subprocess.TimeoutExpired:
-            return TestResult(name=name, status="FAIL", message="TimeoutError: Test execution exceeded limit")
-        except (OSError, subprocess.SubprocessError) as exc:
-            return TestResult(name=name, status="FAIL", message=f"RuntimeError: {exc}")
+            namespace = self._namespace_for_target(target_file, module_cache)
+            _validate_safe_code(test_code, allow_schema_open=True)
+            exec(compile(test_code, f"<{name}>", "exec"), namespace, namespace)
+            return TestResult(name=name, status="PASS", message="OK")
+        except Exception as exc:
+            return TestResult(name=name, status="FAIL", message=f"{type(exc).__name__}: {exc}")
+
+    def _namespace_for_target(self, target_file: str, module_cache: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        namespace = self._base_exec_namespace()
+        if target_file.endswith(".py"):
+            if target_file not in module_cache:
+                module_cache[target_file] = self._load_module_namespace(target_file)
+            namespace.update(module_cache[target_file])
+        return namespace
+
+    def _load_module_namespace(self, path: str) -> Dict[str, Any]:
+        content = self.files.get(path)
+        if content is None:
+            raise FileNotFoundError(path)
+        _validate_safe_code(content)
+        namespace = self._base_exec_namespace()
+        exec(compile(content, f"<{path}>", "exec"), namespace, namespace)
+        return namespace
+
+    def _base_exec_namespace(self) -> Dict[str, Any]:
+        return {
+            "__builtins__": {**SAFE_BUILTINS, "__import__": self._safe_import, "open": self._safe_open},
+            "__name__": "__codeorganism_sandbox__",
+            "os": self._safe_os_module(),
+            "json": json,
+        }
+
+    def _safe_import(self, name: str, globals=None, locals=None, fromlist=(), level: int = 0) -> Any:
+        root_name = name.split(".", 1)[0]
+        if root_name not in SAFE_IMPORT_MODULES:
+            raise ImportError(f"Import not allowed: {name}")
+        if root_name == "os":
+            return self._safe_os_module()
+        if root_name == "json":
+            return json
+        return builtins.__import__(name, globals, locals, fromlist, level)
+
+    def _safe_open(self, path: str, *_args: Any, **_kwargs: Any) -> Any:
+        normalized = path.replace("\\", "/")
+        if normalized not in self.files or not normalized.startswith("schema/"):
+            raise FileNotFoundError(path)
+        return _InMemoryFile(self.files[normalized])
+
+    def _safe_os_module(self) -> Any:
+        class SafeEnviron:
+            def __init__(self, values: Dict[str, str]) -> None:
+                self._values = values
+
+            def get(self, key: str, default: Any = None) -> Any:
+                return self._values.get(key, default)
+
+            def __getitem__(self, key: str) -> str:
+                return self._values[key]
+
+        class SafeOS:
+            def __init__(self, values: Dict[str, str]) -> None:
+                self.environ = SafeEnviron(values)
+
+        return SafeOS(self.env_vars.copy())
 
     # ── Quarantine ─────────────────────────────────────────────────────────
 
@@ -852,4 +1039,5 @@ except Exception as e:
 
 def get_curriculum_seed(phase: int, episode_id: int) -> int:
     """Deterministically generate a seed for a given phase/episode."""
-    return hash(f"codeorganism_phase_{phase}_ep_{episode_id}") % 1000000
+    digest = hashlib.sha256(f"codeorganism_phase_{phase}_ep_{episode_id}".encode("utf-8")).hexdigest()
+    return int(digest[:12], 16) % 1000000

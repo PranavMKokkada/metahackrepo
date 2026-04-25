@@ -114,11 +114,8 @@ class TestSimulator:
 
     def test_patch_tracks_module(self):
         sim = CodebaseSimulator(seed=42)
-        key = list(sim.files.keys())[0]
-        # Use actual content from the file so the patch succeeds
-        content = sim.files[key]
-        first_word = content.split()[0] if content.split() else "x"
-        sim.apply_patch(key, f"{first_word}|{first_word}_patched")
+        key = next(path for path, content in sim.files.items() if path.endswith(".py") and "return " in content)
+        sim.apply_patch(key, "return |return  ")
         assert len(sim.last_patched_modules) > 0
 
     def test_quarantine_module(self):
@@ -243,6 +240,7 @@ class TestEnvironment:
     def test_auto_checkpoint_every_5_steps(self):
         env = CodeOrganismEnv()
         env.reset("phase_1")
+        env._vitality = 60.0
         initial_cps = len(env._simulator.checkpoints)
         for _ in range(5):
             env.step(Action(action_type=CodeOrganismActionType.EMIT_SIGNAL, signal_type="ping"))
@@ -376,6 +374,14 @@ class TestEnvironment:
         result = env.step(Action(action_type=CodeOrganismActionType.DO_NOTHING))
         assert result.done
 
+    def test_done_step_emits_postmortem(self):
+        env = CodeOrganismEnv()
+        env.reset("phase_1")
+        env._max_steps = 1
+        result = env.step(Action(action_type=CodeOrganismActionType.DO_NOTHING))
+        assert result.done
+        assert result.info.get("postmortem")
+
     def test_state_returns_correct_fields(self):
         env = CodeOrganismEnv()
         env.reset("phase_1")
@@ -426,6 +432,23 @@ class TestRewards:
         # The duplicate penalty applies when last 2 actions are the same type
         # emit_signal, emit_signal → penalty on r3
         assert r3.reward_breakdown.efficiency_bonus < r2.reward_breakdown.efficiency_bonus
+
+    def test_signal_spam_penalty_stronger_than_first_signal(self):
+        env = CodeOrganismEnv()
+        env.reset("phase_1")
+        first = env.step(Action(action_type=CodeOrganismActionType.EMIT_SIGNAL, signal_type="a"))
+        env.step(Action(action_type=CodeOrganismActionType.EMIT_SIGNAL, signal_type="b"))
+        third = env.step(Action(action_type=CodeOrganismActionType.EMIT_SIGNAL, signal_type="c"))
+        assert third.reward_breakdown.efficiency_bonus < first.reward_breakdown.efficiency_bonus
+
+    def test_observation_contains_slo_and_incident_summary(self):
+        env = CodeOrganismEnv()
+        obs = env.reset("phase_1")
+        assert "availability_pct" in obs.slo_metrics
+        assert "error_rate_pct" in obs.slo_metrics
+        assert "p95_latency_ms" in obs.slo_metrics
+        assert "incident_severity" in obs.slo_metrics
+        assert "active_faults=" in obs.incident_summary
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

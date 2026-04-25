@@ -1,36 +1,55 @@
-"""FastAPI application for CodeOrganismVM — Hostile Execution Environment."""
+"""FastAPI application for Autonomous SRE OpenEnv environment."""
 
 from __future__ import annotations
 
-import json
 import os
-import subprocess
-import sys
-import traceback
-from typing import Optional, List, Dict, Any
+import secrets
+import time
+from collections import defaultdict, deque
+from typing import Optional, List, Deque, Dict
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import Depends, FastAPI, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from models import Action, Observation, StepResult, EnvState
+from models import Action, CodeOrganismActionType, Observation, StepResult, EnvState
 from environment import SessionManager
 from tasks import TASK_DEFINITIONS, run_grader
-from ui import create_gradio_app
-import gradio as gr
+
+try:
+    import gradio as gr
+    from ui import create_gradio_app
+except ImportError:
+    gr = None
+    create_gradio_app = None
+
+
+def _csv_env(name: str, default: str = "") -> List[str]:
+    return [item.strip() for item in os.environ.get(name, default).split(",") if item.strip()]
+
+
+RUNTIME_API_KEY = secrets.token_urlsafe(32)
+CONFIGURED_API_KEYS = set(_csv_env("CODEORGANISM_API_KEYS"))
+if not CONFIGURED_API_KEYS:
+    CONFIGURED_API_KEYS.add(RUNTIME_API_KEY)
+
+AUTH_DISABLED = os.environ.get("CODEORGANISM_AUTH_DISABLED", "false").lower() in {"1", "true", "yes"}
+RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get("CODEORGANISM_RATE_LIMIT_WINDOW", "60"))
+RATE_LIMIT_MAX_REQUESTS = int(os.environ.get("CODEORGANISM_RATE_LIMIT_MAX", "120"))
+_rate_limit_buckets: Dict[str, Deque[float]] = defaultdict(deque)
 
 app = FastAPI(
-    title="CodeOrganismVM — Hostile Execution Environment",
+    title="Autonomous SRE Control Center",
     description=(
-        "An LLM agent lives inside a broken, hostile execution environment. "
-        "The organism must self-heal, self-correct, and thrive — or die."
+        "OpenEnv environment where an agent performs incident response in a "
+        "self-corrupting service sandbox."
     ),
     version="1.0.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_csv_env("CODEORGANISM_CORS_ORIGINS", "http://localhost:7860,http://127.0.0.1:7860"),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -38,9 +57,10 @@ app.add_middleware(
 # Session manager holds all environment instances
 sessions = SessionManager()
 
-# Mount the interactive UI
-demo = create_gradio_app()
-app = gr.mount_gradio_app(app, demo, path="/ui")
+# Mount the interactive UI when Gradio is installed.
+if gr is not None and create_gradio_app is not None:
+    demo = create_gradio_app()
+    app = gr.mount_gradio_app(app, demo, path="/ui")
 
 # ── Request / Response schemas ─────────────────────────────────────────────────
 
@@ -50,6 +70,35 @@ class ResetRequest(BaseModel):
 class GraderRequest(BaseModel):
     task_id: str
     actions: List[dict]
+
+
+def require_api_key(
+    request: Request,
+    x_api_key: Optional[str] = Header(None),
+    authorization: Optional[str] = Header(None),
+) -> None:
+    if AUTH_DISABLED:
+        return
+
+    provided = x_api_key
+    if not provided and authorization and authorization.lower().startswith("bearer "):
+        provided = authorization.split(" ", 1)[1]
+
+    if not provided or not any(secrets.compare_digest(provided, key) for key in CONFIGURED_API_KEYS):
+        raise HTTPException(status_code=401, detail="Valid API key required.")
+
+    _enforce_rate_limit(request, provided)
+
+
+def _enforce_rate_limit(request: Request, api_key: str) -> None:
+    now = time.monotonic()
+    bucket_key = f"{api_key}:{request.client.host if request.client else 'unknown'}"
+    bucket = _rate_limit_buckets[bucket_key]
+    while bucket and now - bucket[0] > RATE_LIMIT_WINDOW_SECONDS:
+        bucket.popleft()
+    if len(bucket) >= RATE_LIMIT_MAX_REQUESTS:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded.")
+    bucket.append(now)
 
 # ── Helper: resolve session from header ────────────────────────────────────────
 
@@ -62,7 +111,7 @@ def _get_env(session_id: Optional[str] = None):
 def root():
     return {
         "status": "ok",
-        "environment": "code-organism-vm",
+        "environment": "autonomous-sre",
         "version": "1.0.0",
     }
 
@@ -70,21 +119,20 @@ def root():
 def health():
     return {
         "status": "healthy",
-        "environment": "code-organism-vm",
+        "environment": "autonomous-sre",
         "version": "1.0.0",
     }
 
 @app.get("/metadata")
 def metadata():
     return {
-        "name": "code-organism-vm",
+        "name": "autonomous-sre",
         "description": (
-            "A hostile execution environment where an agent must self-heal "
-            "a continuously corrupting codebase."
+            "Autonomous SRE OpenEnv environment for incident-response policy training."
         ),
         "version": "1.0.0",
-        "author": "Andrea",
-        "tags": ["self-healing", "hostile-environment", "llm-agent", "organism"],
+        "author": "Team Autonomous SRE",
+        "tags": ["autonomous-sre", "openenv", "incident-response", "llm-agent"],
         "tasks": list(TASK_DEFINITIONS.keys()),
         "num_tasks": len(TASK_DEFINITIONS),
     }
@@ -104,6 +152,7 @@ def reset(
     req: Optional[ResetRequest] = None,
     task_id: Optional[str] = None,
     x_session_id: Optional[str] = Header(None),
+    _auth: None = Depends(require_api_key),
 ):
     actual_task_id = task_id or (req.task_id if req else None) or "phase_1"
     if actual_task_id not in TASK_DEFINITIONS:
@@ -112,12 +161,12 @@ def reset(
     return env.reset(actual_task_id)
 
 @app.post("/step", response_model=StepResult)
-def step(action: Action, x_session_id: Optional[str] = Header(None)):
+def step(action: Action, x_session_id: Optional[str] = Header(None), _auth: None = Depends(require_api_key)):
     env = _get_env(x_session_id)
     return env.step(action)
 
 @app.get("/state", response_model=EnvState)
-def state(x_session_id: Optional[str] = Header(None)):
+def state(x_session_id: Optional[str] = Header(None), _auth: None = Depends(require_api_key)):
     env = _get_env(x_session_id)
     return env.state()
 
@@ -139,7 +188,7 @@ def list_tasks():
     return {"tasks": tasks}
 
 @app.post("/grader")
-def grader(req: GraderRequest):
+def grader(req: GraderRequest, _auth: None = Depends(require_api_key)):
     if req.task_id not in TASK_DEFINITIONS:
         raise HTTPException(400, f"Unknown task_id: {req.task_id}")
     return run_grader(req.task_id, req.actions)
@@ -162,7 +211,7 @@ def list_mcp_tools():
     }
 
 @app.post("/tools/call")
-def call_mcp_tool(tool_call: dict, x_session_id: Optional[str] = Header(None)):
+def call_mcp_tool(tool_call: dict, x_session_id: Optional[str] = Header(None), _auth: None = Depends(require_api_key)):
     """Universal MCP Tool Executor."""
     name = tool_call.get("name")
     args = tool_call.get("arguments", {})
@@ -178,17 +227,17 @@ def call_mcp_tool(tool_call: dict, x_session_id: Optional[str] = Header(None)):
 # ── Session Management ─────────────────────────────────────────────────────────
 
 @app.post("/sessions/create")
-def create_session():
+def create_session(_auth: None = Depends(require_api_key)):
     return {"session_id": sessions.create_session()}
 
 @app.delete("/sessions/{session_id}")
-def delete_session(session_id: str):
+def delete_session(session_id: str, _auth: None = Depends(require_api_key)):
     if sessions.delete(session_id):
         return {"deleted": session_id}
     raise HTTPException(404, "Session not found")
 
 @app.get("/sessions")
-def list_sessions():
+def list_sessions(_auth: None = Depends(require_api_key)):
     return {"sessions": sessions.list_sessions()}
 
 # ── Main ───────────────────────────────────────────────────────────────────────

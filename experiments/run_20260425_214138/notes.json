@@ -1,0 +1,21 @@
+{
+  "run_id": "run_20260425_214138",
+  "timestamp": "2026-04-25T21:41:38.743385",
+  "commands": [
+    "python -m pip install -r requirements.txt",
+    "python -m pip install -r requirements-training.txt",
+    "pytest -q",
+    "python training/evaluate_policy.py --policies noop random heuristic stabilized sft --episodes-per-phase 6 --out-dir results",
+    "python training/plot_results.py --results-dir results --summary results/eval_summary.json",
+    "python evaluation/run_eval.py"
+  ],
+  "install_status": {
+    "requirements.txt": "failed (numpy build on Python 3.14 / GCC>=8.4 requirement)",
+    "requirements-training.txt": "failed (torch==2.5.1 unavailable for current Python build)"
+  },
+  "checks": {
+    "pytest": "61 passed",
+    "evaluation": "completed",
+    "plots": "generated"
+  }
+}

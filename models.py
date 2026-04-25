@@ -52,6 +52,9 @@ class TestResult(BaseModel):
     duration_ms: float = 0.0
 
 
+TestResult.__test__ = False
+
+
 class Checkpoint(BaseModel):
     """A snapshot available for rollback."""
     checkpoint_id: str
@@ -116,6 +119,8 @@ class Observation(BaseModel):
 
     # Alerts (non-fault system hints)
     alerts: List[str] = Field(default_factory=list)
+    slo_metrics: Dict[str, float] = Field(default_factory=dict)
+    incident_summary: str = ""
 
 
 # ── Action ─────────────────────────────────────────────────────────────────────

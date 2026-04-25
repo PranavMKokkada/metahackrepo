@@ -1,69 +1,122 @@
-# 🛰️ Autonomous SRE Control Center — Meta OpenEnv 2026
+# Autonomous SRE Control Center (OpenEnv)
 
-[![OpenEnv Compliant](https://img.shields.io/badge/OpenEnv-v2-emerald)](https://github.com/meta-pytorch/OpenEnv)
-[![Built with Unsloth](https://img.shields.io/badge/Built%20with-Unsloth-blue)](https://github.com/unslothai/unsloth)
+Autonomous SRE is an OpenEnv-style environment where an agent must keep a self-corrupting service codebase alive under continuous faults.
 
-> **"Self-healing infrastructure that learns to survive under chaos engineering pressure."**
+## Why This Environment
 
----
+- Long-horizon incident response is still hard for LLM agents.
+- This environment turns incident remediation into a step-based control problem with explicit reward feedback.
+- It is designed for the OpenEnv hackathon "Self-Improvement" theme.
 
-## 📖 The Story: Autonomous SRE
+## What the Agent Sees
 
-### 1. The Problem: The MTTR Capability Gap
-In modern cloud environments, **downtime is a multi-million dollar liability**. While traditional monitoring (Datadog, New Relic) can detect failures, the remediation—diagnosing code corruption, deployment regressions, and race conditions—still requires expensive, slow human intervention. Existing "auto-healers" are simple scripts that fail when faced with novel, adversarial architectural drift.
+- Vitality/SLA proxy score (`0-100`)
+- Generated codebase files and checksums
+- Unit test status and failing traces
+- Checkpoints, watchdog flags, and recent signals
+- Dependency graph and incident alerts
 
-### 2. The Environment: A Hostile Chaos Sandbox
-Built on **Meta OpenEnv**, we present a high-fidelity **SRE Chaos Sandbox**. 
-- **The Cluster:** A procedurally generated microservice topology (8–15 modules, 40–120 tests).
-- **The Chaos Engine:** A persistent adversary that injects 12 classes of architectural faults (e.g., Circular Dependencies, Permission Drift, Race Conditions).
-- **The Goal:** An LLM agent (The SRE) must maintain **SLA Compliance (0–100%)** using 8 remediation protocols: `patch_node`, `rollback_canary`, `circuit_break`, and `spawn_team`.
-- **World Modeling:** The agent receives a dynamic **Dependency Graph** of the cluster, forcing it to reason about cascading failures.
+## What the Agent Can Do
 
-### 3. The Results: The Ignition Point
-Using **GRPO (Group Relative Policy Optimization)** and **Unsloth QLoRA**, we trained our agent to develop a "survival instinct." 
-- **The Discovery:** Our training logs show a sharp "ignition point" at Episode 47, where the model learned that **signaling intent** and **proactive circuit-breaking** resulted in 40% higher SLA stability.
-- **Outcome:** The trained agent achieves a **60% reduction in MTTR** compared to baseline heuristics, saving thousands of simulated downtime seconds per incident.
+- `patch_file`
+- `run_tests`
+- `rollback`
+- `quarantine`
+- `spawn_subagent`
+- `request_expert`
+- `emit_signal`
+- `do_nothing`
 
-### 4. Why It Matters: ROI for the Future
-This isn't just a hackathon project; it is the blueprint for **Autonomous Cloud Management**. 
-- **For Enterprises:** Direct mapping to business ROI (Downtime Avoided).
-- **For Trust:** Built-in **XAI Guardrails** provide confidence scores and risk analysis for every AI intervention.
-- **For Scaling:** Standardized via **MCP (Model Context Protocol)**, making it a universal tool for any AI SRE agent.
+## Reward Design (Current)
 
----
+- R1: vitality delta
+- R2: test recovery
+- R3: efficiency bonus
+- R4: coordination bonus
+- R5: novelty/generalization bonus
+- Watchdog penalty for restricted behavior
 
-## 🚀 Technical Quickstart
+## Current Measured Results (Policy Evaluation)
 
-### Infrastructure
-- **SDK:** OpenEnv v2
-- **Backend:** FastAPI + Physical subprocess sandboxing in `/tmp`
-- **UI:** Gradio "Boardroom Edition" Dashboard
-- **Oracle:** GPT-4o-mini backed expert validator
+These are real rollouts from `results/eval_summary.json` (18 episodes per policy, deterministic seed schedule, held-out seeds used in phase 3).
 
-### Running Locally
+| Policy | Survival Rate | Mean Reward | Mean Final Vitality | Phase 3 Survival |
+|---|---:|---:|---:|---:|
+| noop | 0.9444 | -3.9211 | 80.0928 | 0.8333 |
+| random | 0.6667 | -1.5042 | 41.5206 | 0.0000 |
+| heuristic | 0.6111 | -2.4337 | 33.9483 | 0.0000 |
+| stabilized | 0.7222 | -2.6450 | 66.7933 | 0.1667 |
+| sft | 0.6667 | -1.3865 | 59.0933 | 0.0000 |
+
+Plot artifacts:
+
+- `results/reward_curve.png`
+- `results/baseline_vs_agent.png`
+- `results/survival_by_phase.png`
+- `results/action_distribution.png`
+
+Important note:
+
+- This repository now includes reproducible evaluation evidence.
+- It does **not** claim completed GRPO fine-tuning results yet.
+
+Notebook training log extraction (from `Untitled20.ipynb`):
+
+- Logged steps: `60`
+- Initial loss: `2.569`
+- Final loss: `0.07755`
+- Best loss: `0.07705`
+- Artifacts: `results/notebook_training_metrics.json`, `results/notebook_training_curve.png`
+
+## Reproduce Results
+
 ```bash
-# 1. Install dependencies
-pip install -r requirements.txt
+python training/train_sft.py --episodes-per-phase 8
+python training/evaluate_policy.py --policies noop random heuristic stabilized sft --episodes-per-phase 6 --out-dir results
+python training/plot_results.py --results-dir results --summary results/eval_summary.json
+python evaluation/run_eval.py
+python training/grpo_train.py --mode grpo
+```
 
-# 2. Launch the Control Center
+## Run Locally
+
+```bash
+pip install -r requirements.txt
+set CODEORGANISM_API_KEYS=change-me
 python app.py
 ```
-Visit `http://localhost:7860/ui` to access the Strategic Command Center.
 
-### Standard Interface
-Our environment follows the standard Gym-style API. Use our `client.py` for one-line interaction:
-```python
-from client import SREEnvClient
-client = SREEnvClient("http://localhost:7860")
-obs = client.reset()
+UI:
+
+- `http://localhost:7860/ui`
+
+## Validate API Loop
+
+```bash
+python validate.py --api-url http://127.0.0.1:7860 --api-key change-me
 ```
 
----
+Latest local validator run:
 
-## 🏆 Hackathon Standouts
-- ✅ **100% OpenEnv Compliant:** Full `openenv.yaml` manifest and base class inheritance.
-- ✅ **Composable Rubrics:** Reward signals are split into 5 modular scorers (SLA, Recovery, Efficiency, Teaming, Generalization).
-- ✅ **MCP Enabled:** Standardized `tools/list` and `tools/call` endpoints for universal agent integration.
-- ✅ **Cinematic UI:** Premium glassmorphism dashboard with real-time telemetry and animations.
+- `92/92` checks passed.
 
-**Built for the Meta PyTorch OpenEnv Hackathon — Theme #4: Self-Improvement**
+## Hugging Face Space
+
+- Configured URL in manifest: `https://huggingface.co/spaces/PranavMKokkada/autonomous-sre`
+- Remote public endpoint verification should be run just before submission cutoff.
+
+## Demo Asset
+
+- Slide deck/script for 90-120s judge demo: `DEMO_PITCH_SLIDES.md`
+
+## Repository Pointers
+
+- API server: `app.py`
+- Environment core: `environment.py`
+- Simulator/fault engine: `data.py`
+- Reward rubrics: `rubrics.py`
+- Evaluation scripts: `training/evaluate_policy.py`, `training/plot_results.py`, `training/rollout.py`, `evaluation/run_eval.py`
+- SFT-style policy training: `training/train_sft.py`, output `training/policies/sft_policy.json`
+- Training evidence extraction from notebook logs: `training/extract_notebook_training.py`
+- GPU runbook and HF Jobs recipe: `training/GRPO_GPU_RUNBOOK.md`, `training/hf_jobs/grpo_job.yaml`
+- Results package: `results/`
