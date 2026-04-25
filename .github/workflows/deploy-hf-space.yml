@@ -1,3 +1,9 @@
+# Deploy only what the root Dockerfile needs for the Hugging Face Docker Space.
+# This avoids pushing the full GitHub tree (PDFs, notebooks, training artifacts, etc.),
+# which Hugging Face rejects via pre-receive hooks for binary git objects.
+#
+# When you change Dockerfile COPY lines, update the file lists below to match.
+
 name: Deploy Hugging Face Space
 
 on:
@@ -34,44 +40,44 @@ jobs:
             exit 1
           fi
 
-      - name: Build deploy payload
+      - name: Build Space payload (Dockerfile whitelist)
         run: |
-          mkdir -p /tmp/hf-space-src
-          rsync -av --delete \
-            --exclude '.git/' \
-            --exclude '.github/' \
-            --exclude '.main-worktree/' \
-            --exclude '.venv311/' \
-            --exclude '__pycache__/' \
-            --exclude '*.pyc' \
-            --exclude 'results/' \
-            --exclude 'experiments/' \
-            --exclude 'trainingthings.pdf' \
-            --exclude 'trainingthings_images/' \
-            --exclude '*.ipynb' \
-            --exclude '*.pdf' \
-            --exclude '*.docx' \
-            --exclude '*.pptx' \
-            --exclude '*.xlsx' \
-            "${GITHUB_WORKSPACE}/" /tmp/hf-space-src/
-          cp "${GITHUB_WORKSPACE}/.github/hf-space/README.md" /tmp/hf-space-src/README.md
-          # HF Space git rejects these binaries (pre-receive hook) unless Xet is enabled.
-          # Always strip after rsync so deploy succeeds even when an older workflow run
-          # checks out a commit that predates rsync excludes, or rsync omits a pattern.
-          find /tmp/hf-space-src -type f \( \
-            -name '*.pdf' -o -name '*.docx' -o -name '*.pptx' -o -name '*.xlsx' \
-          \) -print -delete
+          set -euo pipefail
+          SRC="${GITHUB_WORKSPACE}"
+          DST="/tmp/hf-space-src"
+          rm -rf "${DST}"
+          mkdir -p "${DST}"
+
+          # ---- Must match root Dockerfile (COPY + build context) ----
+          install -m0644 "${SRC}/requirements.txt" "${DST}/requirements.txt"
+          install -m0644 "${SRC}/Dockerfile" "${DST}/Dockerfile"
+          if [ -f "${SRC}/.dockerignore" ]; then
+            install -m0644 "${SRC}/.dockerignore" "${DST}/.dockerignore"
+          fi
+
+          for f in \
+            app.py baseline.py client.py data.py environment.py gym_wrapper.py \
+            inference.py models.py rubrics.py tasks.py test_api.py test_env.py \
+            ui.py validate.py openenv.yaml pyproject.toml; do
+            install -m0644 "${SRC}/${f}" "${DST}/${f}"
+          done
+
+          cp -a "${SRC}/evaluation" "${DST}/evaluation"
+          cp -a "${SRC}/project_skills" "${DST}/project_skills"
+
+          install -m0644 "${SRC}/.github/hf-space/README.md" "${DST}/README.md"
+
+          echo "Space payload tree (max depth 3):"
+          find "${DST}" -maxdepth 3 -type f | sort
 
       - name: Sync files to Hugging Face Space
         run: |
+          set -euo pipefail
           git clone "https://oauth2:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_REPO}" /tmp/hf-space-repo
           cd /tmp/hf-space-repo
           git checkout "${HF_SPACE_BRANCH}" || git checkout -b "${HF_SPACE_BRANCH}"
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
           cp -a /tmp/hf-space-src/. .
-          find . -type f ! -path '*/.git/*' \( \
-            -name '*.pdf' -o -name '*.docx' -o -name '*.pptx' -o -name '*.xlsx' \
-          \) -print -delete
           git add -A
           if git diff --cached --quiet; then
             echo "No changes to deploy."

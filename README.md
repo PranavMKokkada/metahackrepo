@@ -104,7 +104,7 @@ Latest local validator run:
 
 - Configured URL in manifest: `https://huggingface.co/spaces/teletubbies/autonomous-sre`
 - Remote public endpoint verification should be run just before submission cutoff.
-- GitHub Actions auto-deploy is available via `.github/workflows/deploy-hf-space.yml` (PDFs and similar binaries are excluded from the Space git sync because Hugging Face rejects them unless you use [Xet](https://huggingface.co/docs/hub/xet)).
+- GitHub Actions auto-deploy is available via `.github/workflows/deploy-hf-space.yml` (only files required by the root `Dockerfile` are pushed to the Space repo, so large docs and binaries in GitHub never enter Hugging Face git).
 - GitHub Actions artifact sync is available via `.github/workflows/upload-hf-artifacts.yml`.
 - Required GitHub repository configuration:
   - Secret: `HF_TOKEN` (Hugging Face write token with Space access)
