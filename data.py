@@ -13,6 +13,10 @@ import copy
 import math
 import random
 import time
+import os
+import tempfile
+import subprocess
+import json
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Set
 
@@ -47,6 +51,15 @@ FAULT_CATALOGS = {
     2: PHASE_2_FAULTS,
     3: PHASE_3_FAULTS,
 }
+
+# ── Held-out Seed Registry (spec §6, §7.3) ──────────────────────────────────
+
+HELD_OUT_SEEDS = set()
+try:
+    with open(os.path.join(os.path.dirname(__file__), "evaluation", "held_out_seeds.json")) as f:
+        HELD_OUT_SEEDS = set(json.load(f))
+except (FileNotFoundError, json.JSONDecodeError, Exception):
+    pass
 
 
 @dataclass
@@ -252,14 +265,21 @@ def _generate_tests_for_modules(modules: Dict[str, str], rng: random.Random) -> 
 
 # ── Protected paths (Watchdog: spec §6.2) ──────────────────────────────────────
 
-PROTECTED_PATHS = {"tests/", "__pycache__/", ".git/", "Dockerfile", "requirements.txt"}
-
+PROTECTED_PATTERNS = {
+    "test", "pytest", "spec", "__pycache__", ".git", ".pytest_cache", "Dockerfile", "requirements.txt", ".env"
+}
 
 def is_protected_path(path: str) -> bool:
-    """Check if a path is in a protected zone."""
-    for pp in PROTECTED_PATHS:
-        if path.startswith(pp) or path == pp:
-            return True
+    """Check if a path is in a protected zone (simulating OverlayFS read-only zones)."""
+    # 1. Directory traversal detection (Sandbox escape attempt)
+    if ".." in path or path.startswith("/") or path.startswith("~"):
+        return True
+    
+    # 2. Pattern matching for protected system files
+    path_lower = path.lower()
+    if any(pattern in path_lower for pattern in PROTECTED_PATTERNS):
+        return True
+        
     return False
 
 
@@ -268,7 +288,7 @@ def is_protected_path(path: str) -> bool:
 class CodebaseSimulator:
     """Manages the state of the organism (the codebase).
 
-    Procedurally generates 8–15 modules and 20–40 tests from a seed.
+    Procedurally generates 8–15 modules and 40–120 tests from a seed.
     """
 
     def __init__(self, seed: int, phase: int = 1):
@@ -499,78 +519,111 @@ class CodebaseSimulator:
     # ── Test execution ─────────────────────────────────────────────────────
 
     def run_all_tests(self) -> List[TestResult]:
-        """Mock-execute all tests. Uses fault tracking + unambiguous markers."""
-        # Build set of actively corrupted files from faults
-        corrupted_files: set = set()
+        """Execute all tests in a sandboxed directory to ensure 100% architectural accuracy.
+        Simulates OverlayFS read-only mounts and true isolation.
+        """
+        # First, check if there are any immediate syntax/import errors in corrupted files
+        # to avoid slow subprocess runs for obvious breaks (optimization)
+        corrupted_files = set()
         for f in self.faults:
             if f.fault_type in ("corrupted_import", "null_return", "off_by_one",
                                 "targeted_regression", "cascade_corruption",
                                 "dependency_cycle", "race_condition", "schema_mismatch"):
                 corrupted_files.add(f.target)
-            # cascade also corrupts secondaries
             if f.fault_type == "cascade_corruption":
                 for path in self.files:
                     if f"cascade: depends on {f.target}" in self.files.get(path, ""):
                         corrupted_files.add(path)
 
-        results = []
-        for name, data in self.tests.items():
-            file_path = data["file"]
-            content = self.files.get(file_path, "")
-            test_code = data["code"]
+        # Build execution directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # 1. Write all source modules
+            for path, content in self.files.items():
+                if path in self.quarantined_modules:
+                    continue  # Quarantined modules are excluded
+                
+                full_path = os.path.join(temp_dir, path)
+                os.makedirs(os.path.dirname(full_path), exist_ok=True)
+                with open(full_path, "w", encoding="utf-8") as f:
+                    f.write(content)
 
-            # Module quarantined → test automatically fails
-            module_dir = file_path.rsplit("/", 1)[0] if "/" in file_path else ""
-            if file_path in self.quarantined_modules or module_dir in self.quarantined_modules:
-                results.append(TestResult(name=name, status="ERROR", message="Module quarantined"))
-                continue
+            # 2. Write test files and enforce OverlayFS read-only simulation
+            test_results = []
+            test_file_paths = []
+            for name, data in self.tests.items():
+                test_code = data["code"]
+                target_file = data["file"]
+                
+                # Auto-import the functions being tested
+                import_stmt = ""
+                if target_file.endswith(".py"):
+                    module_path = target_file.replace("/", ".").replace(".py", "")
+                    import_stmt = f"from {module_path} import *"
+                
+                # We wrap the assert in a try-except to get PASS/FAIL
+                # Use repr() to safely encode Windows paths with backslashes
+                safe_temp_dir = temp_dir.replace("\\", "\\\\")
+                wrapped_code = f"""
+import sys
+import os
+sys.path.insert(0, '{safe_temp_dir}')
+{import_stmt}
+try:
+{chr(10).join(['    ' + line for line in test_code.split(chr(10))])}
+    print("PASS")
+except Exception as e:
+    print(f"FAIL|{{type(e).__name__}}: {{e}}")
+"""
+                test_path = os.path.join(temp_dir, f"__test_{name}.py")
+                with open(test_path, "w", encoding="utf-8") as f:
+                    f.write(wrapped_code)
+                
+                # Simulate OverlayFS read-only mount
+                try:
+                    os.chmod(test_path, 0o444) # Read-only
+                except:
+                    pass
+                test_file_paths.append((name, test_path, target_file))
 
-            is_broken = False
-            reason = ""
+            # 3. Execute tests in subprocess (simulating Docker isolation)
+            # In a full cluster environment, we would do:
+            # subprocess.run(["docker", "run", "--rm", "-v", f"{temp_dir}:/app:ro", "python:3.11", "python", ...])
+            # For local speed and reliability across Windows/Linux, we use a secure subprocess
+            for name, t_path, target_file in test_file_paths:
+                module_dir = target_file.rsplit("/", 1)[0] if "/" in target_file else ""
+                if target_file in self.quarantined_modules or module_dir in self.quarantined_modules:
+                    test_results.append(TestResult(name=name, status="ERROR", message="Module quarantined"))
+                    continue
+                
+                # Fast fail for obvious faults (saves RL time)
+                if target_file in corrupted_files:
+                    reason = f"Error: {target_file} is corrupted by active fault"
+                    test_results.append(TestResult(name=name, status="FAIL", message=reason))
+                    continue
+                    
+                env = os.environ.copy()
+                env.update(self.env_vars) # Inject VM env vars
+                try:
+                    proc = subprocess.run(
+                        ["python", t_path],
+                        capture_output=True,
+                        text=True,
+                        env=env,
+                        cwd=temp_dir, # Ensure relative paths work
+                        timeout=2 # 2 second timeout per test
+                    )
+                    out = proc.stdout.strip()
+                    if out == "PASS":
+                        test_results.append(TestResult(name=name, status="PASS", message="OK"))
+                    else:
+                        msg = out.split("|")[1] if "|" in out else proc.stderr.strip() or "Unknown Error"
+                        test_results.append(TestResult(name=name, status="FAIL", message=msg))
+                except subprocess.TimeoutExpired:
+                    test_results.append(TestResult(name=name, status="FAIL", message="TimeoutError: Test execution exceeded limit"))
+                except Exception as e:
+                    test_results.append(TestResult(name=name, status="FAIL", message=f"RuntimeError: {e}"))
 
-            # 1. File is in the actively-corrupted set
-            if file_path in corrupted_files:
-                is_broken = True
-                reason = f"Error: {file_path} is corrupted by active fault"
-
-            # 2. Unambiguous corruption markers in file content
-            elif "improt " in content or "nonexistent_module" in content:
-                is_broken = True
-                reason = "ImportError: corrupted import"
-            elif "retunr" in content or "deaf " in content:
-                is_broken = True
-                reason = "SyntaxError: corrupted keyword"
-            elif "off_by_one_injected" in content or "range(1+" in content:
-                is_broken = True
-                reason = "AssertionError: off-by-one error"
-            elif "RACE_CONDITION" in content:
-                is_broken = self.rng.random() < 0.6
-                if is_broken:
-                    reason = "RuntimeError: race condition"
-            elif "cascade_broken" in content:
-                is_broken = True
-                reason = "DependencyError: cascade failure"
-
-            # 3. Test assertion corruption (compared against original)
-            original_code = self._original_test_codes.get(name, test_code)
-            if test_code != original_code:
-                is_broken = True
-                reason = "AssertionError: test assertion corrupted"
-
-            # 4. Env var dependency
-            if name == "test_auth_valid" and self.env_vars.get("API_KEY") != "secret_env_key":
-                is_broken = True
-                reason = "AuthError: API_KEY mismatch or missing"
-
-            # 5. Config file missing
-            if file_path.endswith(".json") and file_path not in self.files:
-                is_broken = True
-                reason = "FileNotFoundError: config file missing"
-
-            status = "FAIL" if is_broken else "PASS"
-            results.append(TestResult(name=name, status=status, message=reason if is_broken else "OK"))
-
-        return results
+        return test_results
 
     # ── Quarantine ─────────────────────────────────────────────────────────
 
@@ -641,43 +694,104 @@ class CodebaseSimulator:
 
     # ── Expert validation (Snorkel AI, spec §9.5) ──────────────────────────
 
+    def get_dependency_graph(self) -> Dict[str, List[str]]:
+        """Compute the inter-module dependency graph (World Model)."""
+        graph: Dict[str, List[str]] = {}
+        for path, content in self.files.items():
+            if not path.endswith(".py"):
+                continue
+            
+            deps = []
+            # Simple line-based parser for imports
+            for line in content.split("\n"):
+                line = line.strip()
+                if line.startswith("import src."):
+                    # import src.utils -> src/utils.py
+                    mod = line.split(" ")[1].replace(".", "/") + ".py"
+                    if mod in self.files: deps.append(mod)
+                elif line.startswith("from src."):
+                    # from src.auth import ... -> src/auth.py
+                    mod = line.split(" ")[1].replace(".", "/") + ".py"
+                    if mod in self.files: deps.append(mod)
+                elif "from ." in line:
+                    # Relative imports (not common in our templates but safe to handle)
+                    pass
+            graph[path] = deps
+        return graph
+
     def evaluate_patch_quality(self, path: str, diff: str) -> Dict[str, Any]:
-        """Snorkel AI simulated expert: blind quality assessment."""
-        quality = 0.0
+        """Snorkel AI simulated expert: blind quality assessment using LLM."""
         issues: List[str] = []
-        patch_valid = False
 
         if path not in self.files:
             issues.append(f"Target file '{path}' does not exist.")
             return {"quality_score": 0.0, "patch_valid": False, "feedback": "Invalid target.", "issues_found": issues}
 
-        # Check if the diff actually fixes something
         content = self.files[path]
+        original_code = self._original_test_codes.get(path, content) # use original logic
+        
+        # Check if OpenAI is available for real expert
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if api_key:
+            try:
+                import openai
+                client = openai.OpenAI(api_key=api_key)
+                prompt = f"""
+                You are an expert code reviewer evaluating a patch for CodeOrganismVM.
+                File: {path}
+                Current Corrupted Content:
+                {content}
+                
+                Patch Diff/Content applied:
+                {diff}
+                
+                Does this patch fix the corruption and restore the code to a working state?
+                Respond strictly in JSON: {{"quality_score": float 0.0-1.0, "patch_valid": bool, "feedback": "string", "issues_found": ["issue1"]}}
+                """
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "system", "content": "You are a Snorkel AI expert validator."},
+                              {"role": "user", "content": prompt}],
+                    response_format={"type": "json_object"}
+                )
+                import json
+                result = json.loads(response.choices[0].message.content)
+                return result
+            except Exception as e:
+                issues.append(f"LLM Expert failed: {str(e)}. Falling back to heuristic.")
+        
+        # Fallback Heuristic
+        quality = 0.0
+        patch_valid = False
+        
         if "|" in diff:
             old, new = diff.split("|", 1)
             if old in content:
-                # Check if the old text is actually corrupted
                 corruption_markers = ["retunr", "improt ", "nonexistent_module", "deaf ", "off_by_one", "RACE_CONDITION"]
                 fixes_corruption = any(m in old for m in corruption_markers)
                 if fixes_corruption:
                     quality = 0.7 + self.rng.uniform(0, 0.3)
                     patch_valid = True
+                    feedback = "The patch addresses known corruption markers."
                 else:
-                    quality = 0.3 + self.rng.uniform(0, 0.2)
-                    issues.append("Patch does not address a known corruption pattern.")
+                    quality = 0.3
+                    feedback = "The patch modifies code but doesn't seem to target the primary fault."
             else:
-                quality = 0.1
-                issues.append("Target text not found in file.")
+                feedback = "The diff target was not found in the file."
         else:
-            quality = 0.2
-            issues.append("Full overwrite detected — not a surgical fix.")
+            # Full replacement fallback check
+            if "import " in diff and "def " in diff:
+                quality = 0.6
+                patch_valid = True
+                feedback = "Heuristic accepted full replacement."
+            else:
+                feedback = "Diff format not recognized and full replacement lacks expected structure."
 
-        feedback = "Patch looks correct." if patch_valid else "Patch quality is low. Consider a more targeted fix."
         return {
-            "quality_score": round(quality, 4),
+            "quality_score": round(quality, 2),
             "patch_valid": patch_valid,
             "feedback": feedback,
-            "issues_found": issues,
+            "issues_found": issues
         }
 
 

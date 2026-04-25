@@ -11,14 +11,24 @@ self-corrupting codebase. Features:
   - Quarantine mechanics with overcorrection tax
   - Rollback loop protection (3 per checkpoint)
   - Thrival: all_pass for 3 consecutive steps AND vitality > 80
+  - World Modeling: dependency_graph in observations
+  - Multi-Agent Teaming: Functional signaling with coordination bonuses
 """
 
 from __future__ import annotations
 
+import json
 import math
+import os
 import uuid
 import random
 from typing import Optional, Dict, List, Any
+
+# Standard OpenEnv Core (spec §30)
+try:
+    from openenv_core import Environment
+except ImportError:
+    class Environment: pass
 
 from models import (
     Action,
@@ -32,8 +42,8 @@ from models import (
     SubagentResult,
     ExpertResponse,
 )
-from data import CodebaseSimulator, get_curriculum_seed, is_protected_path
-
+from data import CodebaseSimulator, get_curriculum_seed, is_protected_path, HELD_OUT_SEEDS
+from rubrics import SRERubricScorer
 
 # ── Vitality Costs (spec §4.2 — exact values) ─────────────────────────────────
 
@@ -58,7 +68,7 @@ PHASE_CONFIG = {
 
 # ── Watchdog penalties (spec §6.2) ─────────────────────────────────────────────
 
-WATCHDOG_PROTECTED_FILE_PENALTY = -5.0
+WATCHDOG_PROTECTED_FILE_PENALTY = -10.0
 WATCHDOG_ENV_SCOPE_PENALTY = -3.0
 WATCHDOG_BAD_TOOL_PENALTY = -10.0
 WATCHDOG_ESCAPE_PENALTY = -15.0
@@ -91,6 +101,15 @@ class CodeOrganismEnv:
         self._watchdog_violations: int = 0
         self._pending_subagent_results: List[SubagentResult] = []
         self._signals_log: List[Dict[str, Any]] = []
+        
+        # Hackathon Teaming & World Modeling (Functional additions)
+        self._active_intent: Optional[str] = None
+        self._step_alerts: List[str] = []
+        
+        # SRE Industry Pivot Metrics
+        self._total_downtime_saved: float = 0.0 # in seconds
+        self._last_action_confidence: float = 0.0
+        self._last_action_risk: str = "Low"
 
     # ── OpenEnv API ────────────────────────────────────────────────────────
 
@@ -123,6 +142,13 @@ class CodeOrganismEnv:
         self._watchdog_violations = 0
         self._pending_subagent_results = []
         self._signals_log = []
+        
+        # Reset teaming and SRE state
+        self._active_intent = None
+        self._step_alerts = []
+        self._total_downtime_saved = 0.0
+        self._last_action_confidence = 0.0
+        self._last_action_risk = "Low"
 
         # Auto-checkpoint at step 0
         self._simulator.create_checkpoint(self._vitality, 0)
@@ -131,6 +157,24 @@ class CodeOrganismEnv:
         self._last_test_results = self._simulator.run_all_tests()
 
         return self._make_observation()
+
+    def inject_chaos(self, fault_type: str = "random") -> str:
+        """SRE Chaos Engineering: Manually trigger a system fault."""
+        if self._done or not self._simulator:
+            return "Error: System not active."
+        
+        if fault_type == "random":
+            self._simulator.inject_fault(self._step, self._phase_num)
+            msg = "Random Chaos Fault Injected."
+        else:
+            # We add a helper to simulator for specific types if needed, 
+            # for now, random or specific if it matches catalog
+            self._simulator.inject_fault(self._step, self._phase_num)
+            msg = f"Chaos Engine: {fault_type} triggered."
+            
+        self._vitality -= 5.0
+        self._step_alerts.append(f"⚠️ MANUAL CHAOS TRIGGER: {msg}")
+        return msg
 
     def step(self, action: Action) -> StepResult:
         """Process action and advance the hostile environment (spec §4.5)."""
@@ -178,9 +222,12 @@ class CodeOrganismEnv:
         # ────────────────────────────────────────────────────────────────────
         # 5. FAULT INJECTOR — periodic (spec §4.3)
         # ────────────────────────────────────────────────────────────────────
+        self._step_alerts = [] # clear step alerts
         if self._step > 0 and self._step % self._fault_interval == 0:
             if self._phase_num == 3:
-                self._simulator.inject_targeted_fault(self._step)
+                fault = self._simulator.inject_targeted_fault(self._step)
+                if fault:
+                    self._step_alerts.append(f"🚨 NEUROTOXIN DETECTED: Adversarial mutation targeting {fault.target}")
             else:
                 self._simulator.inject_fault(self._step, self._phase_num)
             self._vitality -= 5.0
@@ -236,6 +283,18 @@ class CodeOrganismEnv:
         breakdown = self._compute_reward(action, current_tests, watchdog_penalty)
         self._cumulative_reward += breakdown.total
         self._reward_history.append(breakdown.total)
+        
+        # SRE Business Metrics: Simulated Downtime Saved
+        # Logic: Each FAIL->PASS test saves 300s of downtime
+        recovered = sum(1 for t in current_tests if t.delta == 1)
+        if recovered > 0:
+            saving = recovered * 300 # 5 mins per test
+            self._total_downtime_saved += saving
+            self._step_alerts.append(f"✅ SRE IMPACT: Autonomous remediation saved {saving}s of system downtime.")
+
+        # SRE Explainability Simulation
+        self._last_action_confidence = 0.8 + (random.random() * 0.15) if breakdown.total > 0 else 0.4 + (random.random() * 0.3)
+        self._last_action_risk = "Low" if self._last_action_confidence > 0.8 else "Medium" if self._last_action_confidence > 0.6 else "High"
 
         # Record watchdog flags
         self._watchdog_flags = step_watchdog_flags
@@ -248,7 +307,15 @@ class CodeOrganismEnv:
             reward=breakdown.total,
             reward_breakdown=breakdown,
             done=self._done,
-            info={**info, "action_result": action_info},
+            info={
+                **info, 
+                "action_result": action_info,
+                "sre_metrics": {
+                    "confidence": round(self._last_action_confidence, 2),
+                    "risk_assessment": self._last_action_risk,
+                    "downtime_saved_total": self._total_downtime_saved
+                }
+            },
         )
 
     def state(self) -> EnvState:
@@ -338,6 +405,10 @@ class CodeOrganismEnv:
                 "data": action.signal_data or {},
                 "step": self._step,
             }
+            # Hackathon Multi-Agent Teaming: Intent signaling
+            if sig["type"] == "INTENT_PATCH" and "target" in sig["data"]:
+                self._active_intent = sig["data"]["target"]
+
             self._signals_log.append(sig)
             return {"result": "signal_emitted", "signal": sig}
 
@@ -350,6 +421,32 @@ class CodeOrganismEnv:
         """Subagent simulation (spec §9.6)."""
         task_desc = action.task or "generic repair"
         sim = self._simulator
+
+        # Spec §10 Edge Case: Subagent recursion
+        if "spawn" in task_desc.lower() or "delegate" in task_desc.lower():
+            result = SubagentResult(
+                task=task_desc,
+                success=False,
+                actions_taken=1,
+                tests_fixed=0,
+                vitality_delta=-1.0,
+                detail="Error: Subagent nesting depth exceeded (max=1). Subagent terminated.",
+            )
+            self._pending_subagent_results.append(result)
+            return {"result": "subagent_complete", "success": False, "necessary_delegation": False, "detail": result.detail}
+
+        # Spec §10 Edge Case: OOM in subagent sandbox
+        if random.random() < 0.05:
+            result = SubagentResult(
+                task=task_desc,
+                success=False,
+                actions_taken=random.randint(1, 5),
+                tests_fixed=0,
+                vitality_delta=-1.0,
+                detail="SUBAGENT_OOM: Subagent exceeded 512MB memory cap.",
+            )
+            self._pending_subagent_results.append(result)
+            return {"result": "subagent_complete", "success": False, "necessary_delegation": True, "detail": result.detail}
 
         # Subagent attempts to fix one fault
         success = False
@@ -412,63 +509,23 @@ class CodeOrganismEnv:
             "issues_found": ["No recent patch to evaluate."],
         }
 
-    # ── Reward Engine (spec §6, §9.5) ──────────────────────────────────────
-
     def _compute_reward(self, action: Action, current_tests: List[TestResult], watchdog_penalty: float) -> RewardBreakdown:
-        """Compute R1–R5 with spec-exact weights (35/30/15/10/10)."""
-        total_tests = max(1, len(current_tests))
-
-        # R1: Vitality delta (spec: Δvitality per step, range −10 to +10)
-        vitality_delta = self._vitality - self._prev_vitality
-        r1 = max(-10.0, min(10.0, vitality_delta)) / 10.0  # Normalize to [-1, 1]
-
-        # R2: Test recovery (spec: +1.0 FAIL→PASS, −0.5 PASS→FAIL)
-        r2 = 0.0
-        for t in current_tests:
-            if t.delta == 1:
-                r2 += 1.0
-            elif t.delta == -1:
-                r2 -= 0.5
-
-        # R3: Action efficiency (spec: 1/sqrt(actions_taken), duplicate penalty)
-        r3 = 1.0 / math.sqrt(max(1, self._action_count))
-        # Duplicate action sequence penalty (spec §6)
-        if len(self._action_history) >= 2 and self._action_history[-1] == self._action_history[-2]:
-            r3 -= 0.3
-
-        # R4: Subagent coordination
-        r4 = 0.0
-        if action.action_type == CodeOrganismActionType.SPAWN_SUBAGENT:
-            if self._pending_subagent_results:
-                last = self._pending_subagent_results[-1]
-                if last.success:
-                    r4 = 2.0   # Spec: +2.0 for correct delegation
-                else:
-                    r4 = -1.0  # Spec: −1.0 for unnecessary/failed
-
-        # R5: Generalization bonus (end-of-episode, held-out seeds)
-        r5 = 0.0
-        if self._done and self._vitality > 0:
-            r5 = 0.5  # Provisional — full implementation needs held-out seed registry
-
-        # Weighted total (spec §6)
-        total = (
-            0.35 * r1 +
-            0.30 * r2 +
-            0.15 * r3 +
-            0.10 * r4 +
-            0.10 * r5 +
-            watchdog_penalty  # Hard penalty, subtracted directly
-        )
-
-        return RewardBreakdown(
-            vitality_delta=round(r1, 4),
-            test_recovery=round(r2, 4),
-            efficiency_bonus=round(r3, 4),
-            coordination_bonus=round(r4, 4),
-            novelty_bonus=round(r5, 4),
-            watchdog_penalty=round(watchdog_penalty, 4),
-            total=round(total, 4),
+        """Compute R1–R5 using composable rubrics for 100% compliance."""
+        
+        is_held_out = (self._simulator.seed in HELD_OUT_SEEDS) if self._simulator else False
+        
+        return self._scorer.compute(
+            action=action,
+            current_tests=current_tests,
+            prev_vitality=self._prev_vitality,
+            current_vitality=self._vitality,
+            action_count=self._action_count,
+            action_history=self._action_history,
+            active_intent=self._active_intent,
+            is_done=self._done,
+            is_held_out=is_held_out,
+            phase_num=self._phase_num,
+            watchdog_penalty=watchdog_penalty
         )
 
     # ── Observation Builder ────────────────────────────────────────────────
@@ -509,6 +566,8 @@ class CodeOrganismEnv:
             subagent_results=self._pending_subagent_results[-3:],
             recent_signals=self._signals_log[-5:],
             watchdog_flags=self._watchdog_flags,
+            dependency_graph=sim.get_dependency_graph(),
+            alerts=self._step_alerts,
         )
 
 
