@@ -55,3 +55,19 @@ tmp_pytest/
 .cache/
 local_data/
 offline_models/
+
+# --- Local-only / generated (do not commit; keep files on disk) ---
+*.pdf
+*.docx
+*.ipynb
+trainingthings_images/
+experiments/
+training/sft_data.jsonl
+.main-worktree
+GEMINI.md
+REPO_ENGINEERING_DOSSIER.md
+TECHNICAL_WHITEPAPER.md
+audit_report.md
+spec_text.txt
+debug_reset.py
+/*.skill

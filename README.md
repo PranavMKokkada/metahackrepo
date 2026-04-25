@@ -60,7 +60,7 @@ Important note:
 - This repository now includes reproducible evaluation evidence.
 - It does **not** claim completed GRPO fine-tuning results yet.
 
-Notebook training log extraction (from `Untitled20.ipynb`):
+Notebook training log extraction (from a local copy of `Untitled20.ipynb`; not stored in git — use `training/extract_notebook_training.py --notebook path/to/your.ipynb`):
 
 - Logged steps: `60`
 - Initial loss: `2.569`

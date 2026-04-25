@@ -27,7 +27,7 @@ python training/grpo_train.py --mode grpo
 - `survival_by_phase.png`: phase-wise survival rates.
 - `action_distribution.png`: normalized action usage by policy.
 - `../evaluation/report.md`: held-out and overall evaluation report.
-- `notebook_training_metrics.json`: extracted training logs from `Untitled20.ipynb`.
+- `notebook_training_metrics.json`: extracted training logs from a local notebook (e.g. `Untitled20.ipynb`, not committed).
 - `notebook_training_curve.png`: plotted notebook loss curve.
 - `training_run_summary.json`: training entrypoint run summary.
 
