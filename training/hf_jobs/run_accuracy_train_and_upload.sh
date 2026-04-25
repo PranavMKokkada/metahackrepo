@@ -6,15 +6,17 @@ set -euo pipefail
 # - DATASET_REPO (e.g. teletubbies/autonomous-sre-logs)
 # - HF_TOKEN (secret)
 
-apt-get update >/dev/null
-apt-get install -y git wget >/dev/null
+# Run from repository root.
+if [[ ! -f "requirements-training.txt" ]]; then
+  echo "Please run this script from the repository root."
+  exit 1
+fi
 
-git clone https://github.com/PranavMKokkada/metahackrepo.git /workspace/metahackrepo
-cd /workspace/metahackrepo
-
-mkdir -p training
-wget -q -O training/sft_data.jsonl \
-  https://huggingface.co/datasets/teletubbies/autonomous-sre-logs/resolve/main/training/sft_data.jsonl
+if [[ ! -f "training/sft_data.jsonl" ]]; then
+  echo "Missing training/sft_data.jsonl"
+  echo "Generate locally via training/generate_sft_data.py or download from dataset repo before running."
+  exit 1
+fi
 
 pip install --upgrade pip >/dev/null
 pip install -r requirements-training.txt >/dev/null
