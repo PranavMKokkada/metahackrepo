@@ -192,10 +192,11 @@ def main() -> None:
         else:
             failed += 1
 
-    print(f"\n{'=' * 60}")
+    sep = "=" * 60
+    print(f"\n{sep}")
     print("  CodeOrganismVM OpenEnv Pre-Submission Validator")
     print(f"  Target: {url}")
-    print(f"{'=' * 60}\n")
+    print(f"{sep}\n")
 
     _check_health(url, tally)
     _check_tasks(url, tally)
@@ -205,14 +206,15 @@ def main() -> None:
     _check_boundaries(url, tally)
     _check_schema(url, tally)
 
-    print(f"\n{'=' * 60}")
+    all_checks_passed = failed == 0 and passed == total
+    print(f"\n{sep}")
     print(f"  Results: {passed}/{total} passed, {failed} failed")
-    if failed == 0:
+    if all_checks_passed:
         print("  \033[92mALL CHECKS PASSED — ready for submission!\033[0m")
     else:
         print(f"  \033[91m{failed} CHECKS FAILED — fix before submitting\033[0m")
-    print(f"{'=' * 60}\n")
-    sys.exit(0 if failed == 0 else 1)
+    print(f"{sep}\n")
+    sys.exit(0 if all_checks_passed else 1)
 
 
 if __name__ == "__main__":

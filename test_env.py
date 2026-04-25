@@ -147,7 +147,7 @@ class TestSimulator:
         # Corrupt something
         key = list(sim.files.keys())[0]
         sim.files[key] = "CORRUPTED"
-        ok, msg = sim.rollback(cid)
+        ok, _ = sim.rollback(cid)
         assert ok
         assert sim.files[key] != "CORRUPTED"
 
@@ -334,7 +334,7 @@ class TestEnvironment:
         env._vitality = 60.0  # Below 80
 
         for _ in range(3):
-            result = env.step(Action(action_type=CodeOrganismActionType.EMIT_SIGNAL, signal_type="heartbeat"))
+            _ = env.step(Action(action_type=CodeOrganismActionType.EMIT_SIGNAL, signal_type="heartbeat"))
         # Thriving streak should build up since all tests pass
         assert env._thriving_streak >= 3
 
