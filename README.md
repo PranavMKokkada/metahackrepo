@@ -102,7 +102,7 @@ Latest local validator run:
 
 ## Hugging Face Space
 
-- Configured URL in manifest: `https://huggingface.co/spaces/PranavMKokkada/autonomous-sre`
+- Configured URL in manifest: `https://huggingface.co/spaces/teletubbies/autonomous-sre`
 - Remote public endpoint verification should be run just before submission cutoff.
 - GitHub Actions auto-deploy is available via `.github/workflows/deploy-hf-space.yml`.
 - Required GitHub repository configuration:
