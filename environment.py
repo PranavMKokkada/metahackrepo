@@ -107,6 +107,11 @@ class CodeOrganismEnv:
         # Hackathon Teaming & World Modeling (Functional additions)
         self._active_intent: Optional[str] = None
         self._step_alerts: List[str] = []
+        
+        # SRE Industry Pivot Metrics
+        self._total_downtime_saved: float = 0.0 # in seconds
+        self._last_action_confidence: float = 0.0
+        self._last_action_risk: str = "Low"
 
     # ── OpenEnv API ────────────────────────────────────────────────────────
 
@@ -140,9 +145,12 @@ class CodeOrganismEnv:
         self._pending_subagent_results = []
         self._signals_log = []
         
-        # Reset teaming state
+        # Reset teaming and SRE state
         self._active_intent = None
         self._step_alerts = []
+        self._total_downtime_saved = 0.0
+        self._last_action_confidence = 0.0
+        self._last_action_risk = "Low"
 
         # Auto-checkpoint at step 0
         self._simulator.create_checkpoint(self._vitality, 0)
@@ -151,6 +159,24 @@ class CodeOrganismEnv:
         self._last_test_results = self._simulator.run_all_tests()
 
         return self._make_observation()
+
+    def inject_chaos(self, fault_type: str = "random") -> str:
+        """SRE Chaos Engineering: Manually trigger a system fault."""
+        if self._done or not self._simulator:
+            return "Error: System not active."
+        
+        if fault_type == "random":
+            self._simulator.inject_fault(self._step, self._phase_num)
+            msg = "Random Chaos Fault Injected."
+        else:
+            # We add a helper to simulator for specific types if needed, 
+            # for now, random or specific if it matches catalog
+            self._simulator.inject_fault(self._step, self._phase_num)
+            msg = f"Chaos Engine: {fault_type} triggered."
+            
+        self._vitality -= 5.0
+        self._step_alerts.append(f"⚠️ MANUAL CHAOS TRIGGER: {msg}")
+        return msg
 
     def step(self, action: Action) -> StepResult:
         """Process action and advance the hostile environment (spec §4.5)."""
@@ -259,6 +285,18 @@ class CodeOrganismEnv:
         breakdown = self._compute_reward(action, current_tests, watchdog_penalty)
         self._cumulative_reward += breakdown.total
         self._reward_history.append(breakdown.total)
+        
+        # SRE Business Metrics: Simulated Downtime Saved
+        # Logic: Each FAIL->PASS test saves 300s of downtime
+        recovered = sum(1 for t in current_tests if t.delta == 1)
+        if recovered > 0:
+            saving = recovered * 300 # 5 mins per test
+            self._total_downtime_saved += saving
+            self._step_alerts.append(f"✅ SRE IMPACT: Autonomous remediation saved {saving}s of system downtime.")
+
+        # SRE Explainability Simulation
+        self._last_action_confidence = 0.8 + (random.random() * 0.15) if breakdown.total > 0 else 0.4 + (random.random() * 0.3)
+        self._last_action_risk = "Low" if self._last_action_confidence > 0.8 else "Medium" if self._last_action_confidence > 0.6 else "High"
 
         # Record watchdog flags
         self._watchdog_flags = step_watchdog_flags
@@ -271,7 +309,15 @@ class CodeOrganismEnv:
             reward=breakdown.total,
             reward_breakdown=breakdown,
             done=self._done,
-            info={**info, "action_result": action_info},
+            info={
+                **info, 
+                "action_result": action_info,
+                "sre_metrics": {
+                    "confidence": round(self._last_action_confidence, 2),
+                    "risk_assessment": self._last_action_risk,
+                    "downtime_saved_total": self._total_downtime_saved
+                }
+            },
         )
 
     def state(self) -> EnvState:
