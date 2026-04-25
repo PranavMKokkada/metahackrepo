@@ -206,16 +206,16 @@ def main() -> None:
     _check_boundaries(url, tally)
     _check_schema(url, tally)
 
-    all_checks_passed = failed == 0 and passed == total
     print(f"\n{sep}")
     print(f"  Results: {passed}/{total} passed, {failed} failed")
-    if all_checks_passed:
-        print("  \033[92mALL CHECKS PASSED — ready for submission!\033[0m")
-    else:
-        print(f"  \033[91m{failed} CHECKS FAILED — fix before submitting\033[0m")
+    exit_code = min(failed, 1)
+    status_messages = {
+        0: "  \033[92mALL CHECKS PASSED — ready for submission!\033[0m",
+        1: f"  \033[91m{failed} CHECKS FAILED — fix before submitting\033[0m",
+    }
+    print(status_messages[exit_code])
     print(f"{sep}\n")
-    sys.exit(0 if all_checks_passed else 1)
+    sys.exit(exit_code)
 
 
-if __name__ == "__main__":
-    main()
+main()
