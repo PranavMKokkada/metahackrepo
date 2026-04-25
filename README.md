@@ -104,6 +104,11 @@ Latest local validator run:
 
 - Configured URL in manifest: `https://huggingface.co/spaces/PranavMKokkada/autonomous-sre`
 - Remote public endpoint verification should be run just before submission cutoff.
+- GitHub Actions auto-deploy is available via `.github/workflows/deploy-hf-space.yml`.
+- Required GitHub repository configuration:
+  - Secret: `HF_TOKEN` (Hugging Face write token with Space access)
+  - Variable: `HF_SPACE_REPO` (example: `teletubbies/autonomous-sre`)
+  - Optional variable: `HF_SPACE_BRANCH` (defaults to `main`)
 
 ## Demo Asset
 

@@ -1,0 +1,70 @@
+name: Deploy Hugging Face Space
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: hf-space-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
+      HF_SPACE_BRANCH: ${{ vars.HF_SPACE_BRANCH || 'main' }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate required configuration
+        run: |
+          if [ -z "${HF_TOKEN}" ]; then
+            echo "Missing required secret: HF_TOKEN"
+            exit 1
+          fi
+          if [ -z "${HF_SPACE_REPO}" ]; then
+            echo "Missing required repo variable: HF_SPACE_REPO (example: teletubbies/autonomous-sre)"
+            exit 1
+          fi
+
+      - name: Build deploy payload
+        run: |
+          mkdir -p /tmp/hf-space-src
+          rsync -av --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude '.main-worktree/' \
+            --exclude '.venv311/' \
+            --exclude '__pycache__/' \
+            --exclude '*.pyc' \
+            --exclude 'results/' \
+            --exclude 'experiments/' \
+            --exclude 'trainingthings.pdf' \
+            --exclude 'trainingthings_images/' \
+            --exclude '*.ipynb' \
+            "${GITHUB_WORKSPACE}/" /tmp/hf-space-src/
+          cp "${GITHUB_WORKSPACE}/.github/hf-space/README.md" /tmp/hf-space-src/README.md
+
+      - name: Sync files to Hugging Face Space
+        run: |
+          git clone "https://oauth2:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_REPO}" /tmp/hf-space-repo
+          cd /tmp/hf-space-repo
+          git checkout "${HF_SPACE_BRANCH}" || git checkout -b "${HF_SPACE_BRANCH}"
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          cp -a /tmp/hf-space-src/. .
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to deploy."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "Sync from GitHub: ${GITHUB_SHA}"
+          git push origin "${HF_SPACE_BRANCH}"
