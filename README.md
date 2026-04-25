@@ -112,6 +112,7 @@ Latest local validator run:
   - Optional variable: `HF_SPACE_BRANCH` (defaults to `main`)
   - Variable: `HF_MODEL_REPO` (example: `teletubbies/autonomous-sre-lora`)
   - Variable: `HF_DATASET_REPO` (example: `teletubbies/autonomous-sre-logs`)
+- If CI still shows old vulnerable package versions, you likely used **Re-run job** on an older workflow run (GitHub reuses that run’s commit). Open the latest commit on `main` and use **Actions → Re-run workflow** from there, or push a new commit.
 
 ## Demo Asset
 
