@@ -193,7 +193,7 @@ class CodeOrganismEnv:
         self._maybe_checkpoint()
         self._maybe_inject_periodic_fault()
         current_tests, num_passing, total_tests = self._evaluate_system_state()
-        info = self._compute_termination_info(num_passing, total_tests)
+        info = self._compute_termination_info()
 
         # ────────────────────────────────────────────────────────────────────
         # 8. Compute reward R1–R5 (spec §6)
@@ -301,7 +301,7 @@ class CodeOrganismEnv:
             return
         self._thriving_streak = 0
 
-    def _compute_termination_info(self, num_passing: int, total_tests: int) -> Dict[str, str]:
+    def _compute_termination_info(self) -> Dict[str, str]:
         if self._vitality <= 0:
             self._vitality = 0
             self._done = True
