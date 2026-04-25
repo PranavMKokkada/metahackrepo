@@ -52,6 +52,15 @@ FAULT_CATALOGS = {
     3: PHASE_3_FAULTS,
 }
 
+# ── Held-out Seed Registry (spec §6, §7.3) ──────────────────────────────────
+
+HELD_OUT_SEEDS = set()
+try:
+    with open(os.path.join(os.path.dirname(__file__), "evaluation", "held_out_seeds.json")) as f:
+        HELD_OUT_SEEDS = set(json.load(f))
+except (FileNotFoundError, json.JSONDecodeError, Exception):
+    pass
+
 
 @dataclass
 class Fault:

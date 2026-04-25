@@ -144,6 +144,37 @@ def grader(req: GraderRequest):
         raise HTTPException(400, f"Unknown task_id: {req.task_id}")
     return run_grader(req.task_id, req.actions)
 
+# ── MCP Integration (spec §48) ──────────────────────────────────────────────────
+
+@app.get("/tools/list")
+def list_mcp_tools():
+    """Expose SRE protocols as standardized MCP Tools."""
+    return {
+        "tools": [
+            {"name": "patch_file", "description": "Deploy a surgical hotfix (OLD|NEW format).", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "diff": {"type": "string"}}}},
+            {"name": "run_tests", "description": "Execute cluster diagnostic suite.", "input_schema": {"type": "object", "properties": {}}},
+            {"name": "rollback", "description": "Revert node to stable checkpoint.", "input_schema": {"type": "object", "properties": {"checkpoint_id": {"type": "string"}}}},
+            {"name": "quarantine", "description": "Circuit-break a corrupt node.", "input_schema": {"type": "object", "properties": {"module": {"type": "string"}}}},
+            {"name": "spawn_subagent", "description": "Delegate incident to parallel team.", "input_schema": {"type": "object", "properties": {"task": {"type": "string"}}}},
+            {"name": "request_expert", "description": "Consult high-fidelity expert oracle.", "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}}},
+            {"name": "emit_signal", "description": "Broadcast intent/metadata.", "input_schema": {"type": "object", "properties": {"signal_type": {"type": "string"}, "signal_data": {"type": "object"}}}},
+        ]
+    }
+
+@app.post("/tools/call")
+def call_mcp_tool(tool_call: dict, x_session_id: Optional[str] = Header(None)):
+    """Universal MCP Tool Executor."""
+    name = tool_call.get("name")
+    args = tool_call.get("arguments", {})
+    env = _get_env(x_session_id)
+    
+    # Map MCP call to standard OpenEnv Action
+    try:
+        action = Action(action_type=CodeOrganismActionType(name), **args)
+        return env.step(action)
+    except Exception as e:
+        raise HTTPException(400, f"MCP Protocol Error: {e}")
+
 # ── Session Management ─────────────────────────────────────────────────────────
 
 @app.post("/sessions/create")

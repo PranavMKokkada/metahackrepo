@@ -231,7 +231,7 @@ def create_gradio_app() -> gr.Blocks:
                     gr.Markdown("<div class='metric-label'>📡 Node Signals</div>")
                     signals_display = gr.JSON(label=None, show_label=False)
                 
-                with gr.Column(elem_classes=["sre-panel"], style="margin-top: 15px;"):
+                with gr.Column(elem_classes=["sre-panel"]):
                     gr.Markdown("<div class='metric-label'>🏗️ Deployment Topology</div>")
                     world_model_display = gr.JSON(label=None, show_label=False)
 

@@ -24,6 +24,12 @@ import uuid
 import random
 from typing import Optional, Dict, List, Any
 
+# Standard OpenEnv Core (spec §30)
+try:
+    from openenv_core import Environment
+except ImportError:
+    class Environment: pass
+
 from models import (
     Action,
     CodeOrganismActionType,
@@ -36,16 +42,8 @@ from models import (
     SubagentResult,
     ExpertResponse,
 )
-from data import CodebaseSimulator, get_curriculum_seed, is_protected_path
-
-# ── Held-out Seed Registry (spec §6, §7.3) ──────────────────────────────────
-
-HELD_OUT_SEEDS = set()
-try:
-    with open(os.path.join(os.path.dirname(__file__), "evaluation", "held_out_seeds.json")) as f:
-        HELD_OUT_SEEDS = set(json.load(f))
-except (FileNotFoundError, json.JSONDecodeError):
-    pass
+from data import CodebaseSimulator, get_curriculum_seed, is_protected_path, HELD_OUT_SEEDS
+from rubrics import SRERubricScorer
 
 # ── Vitality Costs (spec §4.2 — exact values) ─────────────────────────────────
 
@@ -511,71 +509,23 @@ class CodeOrganismEnv:
             "issues_found": ["No recent patch to evaluate."],
         }
 
-    # ── Reward Engine (spec §6, §9.5) ──────────────────────────────────────
-
     def _compute_reward(self, action: Action, current_tests: List[TestResult], watchdog_penalty: float) -> RewardBreakdown:
-        """Compute R1–R5 with spec-exact weights (35/30/15/10/10)."""
-        total_tests = max(1, len(current_tests))
-
-        # R1: Vitality delta (spec: Δvitality per step, range −10 to +10)
-        vitality_delta = self._vitality - self._prev_vitality
-        r1 = max(-10.0, min(10.0, vitality_delta)) / 10.0  # Normalize to [-1, 1]
-
-        # R2: Test recovery (spec: +1.0 FAIL→PASS, −0.5 PASS→FAIL)
-        r2 = 0.0
-        for t in current_tests:
-            if t.delta == 1:
-                r2 += 1.0
-            elif t.delta == -1:
-                r2 -= 0.5
-
-        # R3: Action efficiency (spec: 1/sqrt(actions_taken), duplicate penalty)
-        r3 = 1.0 / math.sqrt(max(1, self._action_count))
-        # Duplicate action sequence penalty (spec §6)
-        if len(self._action_history) >= 2 and self._action_history[-1] == self._action_history[-2]:
-            r3 -= 0.3
-
-        # R4: Subagent coordination & Intent signaling (Teaming Bonus)
-        r4 = 0.0
-        if action.action_type == CodeOrganismActionType.SPAWN_SUBAGENT:
-            if self._pending_subagent_results:
-                last = self._pending_subagent_results[-1]
-                if last.success:
-                    r4 = 2.0   # Spec: +2.0 for correct delegation
-                else:
-                    r4 = -1.0  # Spec: −1.0 for unnecessary/failed
-        elif action.action_type == CodeOrganismActionType.PATCH_FILE:
-            # Teaming Bonus: Did they signal intent before acting?
-            if self._active_intent == action.path:
-                r4 += 0.5  # Bonus for planning and communicating before executing
-                self._active_intent = None # consume intent
-
-        # R5: Generalization bonus (end-of-episode, held-out seeds)
-        r5 = 0.0
-        if self._done and self._vitality > 0:
-            if self._simulator and self._simulator.seed in HELD_OUT_SEEDS:
-                r5 = 0.5  # Bonus for surviving a held-out seed
-            elif self._phase_num == 3:
-                r5 = 0.2  # Base generalization for phase 3
-
-        # Weighted total (spec §6)
-        total = (
-            0.35 * r1 +
-            0.30 * r2 +
-            0.15 * r3 +
-            0.10 * r4 +
-            0.10 * r5 +
-            watchdog_penalty  # Hard penalty, subtracted directly
-        )
-
-        return RewardBreakdown(
-            vitality_delta=round(r1, 4),
-            test_recovery=round(r2, 4),
-            efficiency_bonus=round(r3, 4),
-            coordination_bonus=round(r4, 4),
-            novelty_bonus=round(r5, 4),
-            watchdog_penalty=round(watchdog_penalty, 4),
-            total=round(total, 4),
+        """Compute R1–R5 using composable rubrics for 100% compliance."""
+        
+        is_held_out = (self._simulator.seed in HELD_OUT_SEEDS) if self._simulator else False
+        
+        return self._scorer.compute(
+            action=action,
+            current_tests=current_tests,
+            prev_vitality=self._prev_vitality,
+            current_vitality=self._vitality,
+            action_count=self._action_count,
+            action_history=self._action_history,
+            active_intent=self._active_intent,
+            is_done=self._done,
+            is_held_out=is_held_out,
+            phase_num=self._phase_num,
+            watchdog_penalty=watchdog_penalty
         )
 
     # ── Observation Builder ────────────────────────────────────────────────
