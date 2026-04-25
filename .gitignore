@@ -71,3 +71,6 @@ audit_report.md
 spec_text.txt
 debug_reset.py
 /*.skill
+
+# Local-only planning / triage (not for public repo)
+PENDING_WORK_RL_AND_TRAINING_STATUS.md

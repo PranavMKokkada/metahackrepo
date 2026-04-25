@@ -1,0 +1,29 @@
+# Hugging Face Job: longer, stability-oriented LoRA SFT (accuracy preset).
+# Use when you have GPU credits and want stronger convergence than grpo_job.yaml.
+#
+# Submit from repo root (adjust CLI to your hf version):
+#   hf jobs run --from-repo . --config training/hf_jobs/grpo_job_accuracy.yaml
+#
+name: autonomous-sre-grpo-accuracy
+flavor: t4-small
+command: >
+  python training/grpo_train.py
+  --mode grpo
+  --run-gpu
+  --bf16
+  --model-id ${MODEL_ID}
+  --dataset-path training/sft_data.jsonl
+  --output-dir results/grpo_run_accuracy
+  --max-seq-length 2048
+  --max-steps 600
+  --learning-rate 1e-4
+  --per-device-train-batch-size 1
+  --gradient-accumulation-steps 12
+  --warmup-steps 40
+  --logging-steps 10
+  --save-steps 100
+  --lora-r 32
+  --lora-alpha 32
+  --seed 42
+env:
+  MODEL_ID: unsloth/llama-3-8b-Instruct-bnb-4bit

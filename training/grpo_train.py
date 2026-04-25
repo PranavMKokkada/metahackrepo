@@ -17,12 +17,21 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 
-def _run_notebook_metrics_extraction() -> dict:
+def _run_notebook_metrics_extraction(notebook_path: str = "Untitled20.ipynb") -> dict:
+    if not os.path.isfile(notebook_path):
+        return {
+            "command": "",
+            "returncode": 0,
+            "stdout": "",
+            "stderr": "",
+            "skipped": True,
+            "reason": f"Notebook not found at {notebook_path!r}; skipping extract (OK for CI / HF Jobs).",
+        }
     cmd = [
         sys.executable,
         "training/extract_notebook_training.py",
         "--notebook",
-        "Untitled20.ipynb",
+        notebook_path,
         "--out-json",
         "results/notebook_training_metrics.json",
         "--out-plot",
@@ -34,6 +43,7 @@ def _run_notebook_metrics_extraction() -> dict:
         "returncode": result.returncode,
         "stdout": result.stdout.strip(),
         "stderr": result.stderr.strip(),
+        "skipped": False,
     }
 
 def _write_training_summary(mode: str, model_id: str, notebook_extract: dict) -> str:
@@ -195,11 +205,18 @@ def main():
     parser.add_argument("--lora-alpha", type=int, default=16)
     parser.add_argument("--bf16", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--notebook",
+        default="Untitled20.ipynb",
+        help="Optional path to a local Jupyter notebook for metrics extraction (skipped if missing).",
+    )
     args = parser.parse_args()
 
     print(f"Initializing {args.mode.upper()} training for {args.model_id}...")
-    notebook_extract = _run_notebook_metrics_extraction()
-    if notebook_extract["returncode"] == 0:
+    notebook_extract = _run_notebook_metrics_extraction(args.notebook)
+    if notebook_extract.get("skipped"):
+        print(notebook_extract.get("reason", "Notebook extraction skipped."))
+    elif notebook_extract["returncode"] == 0:
         print("Notebook training metrics extracted to results/")
     else:
         print("Notebook extraction failed; see summary for stderr.")
