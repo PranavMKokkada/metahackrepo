@@ -119,6 +119,8 @@ class Observation(BaseModel):
 
     # Alerts (non-fault system hints)
     alerts: List[str] = Field(default_factory=list)
+    slo_metrics: Dict[str, float] = Field(default_factory=dict)
+    incident_summary: str = ""
 
 
 # ── Action ─────────────────────────────────────────────────────────────────────

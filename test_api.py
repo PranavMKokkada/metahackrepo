@@ -16,7 +16,7 @@ def test_public_metadata_endpoints():
     assert client.get("/health").json()["status"] == "healthy"
 
     metadata = client.get("/metadata").json()
-    assert metadata["name"] == "code-organism-vm"
+    assert metadata["name"] == "autonomous-sre"
 
     tasks = client.get("/tasks").json()["tasks"]
     assert {task["task_id"] for task in tasks} == {"phase_1", "phase_2", "phase_3"}

@@ -1,0 +1,12 @@
+{
+  "timestamp_utc": "2026-04-25T15:39:05.044669+00:00",
+  "mode": "grpo",
+  "model_id": "unsloth/llama-3-8b-Instruct-bnb-4bit",
+  "notebook_extract": {
+    "command": "C:\\Python314\\python.exe training/extract_notebook_training.py --notebook Untitled20.ipynb --out-json results/notebook_training_metrics.json --out-plot results/notebook_training_curve.png",
+    "returncode": 0,
+    "stdout": "Wrote results/notebook_training_metrics.json\nWrote results/notebook_training_curve.png",
+    "stderr": ""
+  },
+  "notes": "This run materializes notebook-derived training evidence. Use external GPU runtime for full GRPO fine-tuning."
+}

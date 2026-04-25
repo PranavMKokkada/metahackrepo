@@ -1,0 +1,195 @@
+{
+  "metadata": {
+    "episodes_per_phase": 6,
+    "phases": [
+      "phase_1",
+      "phase_2",
+      "phase_3"
+    ],
+    "policies": [
+      "noop",
+      "random",
+      "heuristic",
+      "stabilized",
+      "sft"
+    ],
+    "held_out_seed_count": 10
+  },
+  "policies": {
+    "noop": {
+      "policy": "noop",
+      "episodes": 18,
+      "survival_rate": 0.9444,
+      "thrival_rate": 0.1111,
+      "mean_reward": -3.9211,
+      "median_reward": -2.708,
+      "mean_final_vitality": 80.0928,
+      "mean_watchdog_violations": 0.0,
+      "mean_steps": 54.7778,
+      "mean_tests_recovered": 0.0,
+      "by_phase": {
+        "phase_1": {
+          "episodes": 6,
+          "survival_rate": 1.0,
+          "thrival_rate": 0.3333,
+          "mean_reward": -0.4813,
+          "mean_final_vitality": 100.0
+        },
+        "phase_2": {
+          "episodes": 6,
+          "survival_rate": 1.0,
+          "thrival_rate": 0.0,
+          "mean_reward": -2.8276,
+          "mean_final_vitality": 98.9867
+        },
+        "phase_3": {
+          "episodes": 6,
+          "survival_rate": 0.8333,
+          "thrival_rate": 0.0,
+          "mean_reward": -8.4544,
+          "mean_final_vitality": 41.2917
+        }
+      }
+    },
+    "random": {
+      "policy": "random",
+      "episodes": 18,
+      "survival_rate": 0.6667,
+      "thrival_rate": 0.1111,
+      "mean_reward": -1.5042,
+      "median_reward": -1.5135,
+      "mean_final_vitality": 41.5206,
+      "mean_watchdog_violations": 0.0,
+      "mean_steps": 34.4444,
+      "mean_tests_recovered": 0.0,
+      "by_phase": {
+        "phase_1": {
+          "episodes": 6,
+          "survival_rate": 1.0,
+          "thrival_rate": 0.3333,
+          "mean_reward": 0.2641,
+          "mean_final_vitality": 91.8683
+        },
+        "phase_2": {
+          "episodes": 6,
+          "survival_rate": 1.0,
+          "thrival_rate": 0.0,
+          "mean_reward": -1.4428,
+          "mean_final_vitality": 32.6933
+        },
+        "phase_3": {
+          "episodes": 6,
+          "survival_rate": 0.0,
+          "thrival_rate": 0.0,
+          "mean_reward": -3.3338,
+          "mean_final_vitality": 0.0
+        }
+      }
+    },
+    "heuristic": {
+      "policy": "heuristic",
+      "episodes": 18,
+      "survival_rate": 0.6111,
+      "thrival_rate": 0.1111,
+      "mean_reward": -2.4337,
+      "median_reward": -2.7157,
+      "mean_final_vitality": 33.9483,
+      "mean_watchdog_violations": 0.0,
+      "mean_steps": 39.8333,
+      "mean_tests_recovered": 0.0,
+      "by_phase": {
+        "phase_1": {
+          "episodes": 6,
+          "survival_rate": 1.0,
+          "thrival_rate": 0.3333,
+          "mean_reward": -0.4445,
+          "mean_final_vitality": 86.8367
+        },
+        "phase_2": {
+          "episodes": 6,
+          "survival_rate": 0.8333,
+          "thrival_rate": 0.0,
+          "mean_reward": -3.6967,
+          "mean_final_vitality": 15.0083
+        },
+        "phase_3": {
+          "episodes": 6,
+          "survival_rate": 0.0,
+          "thrival_rate": 0.0,
+          "mean_reward": -3.1598,
+          "mean_final_vitality": 0.0
+        }
+      }
+    },
+    "stabilized": {
+      "policy": "stabilized",
+      "episodes": 18,
+      "survival_rate": 0.7222,
+      "thrival_rate": 0.1111,
+      "mean_reward": -2.645,
+      "median_reward": -1.3071,
+      "mean_final_vitality": 66.7933,
+      "mean_watchdog_violations": 0.0,
+      "mean_steps": 50.6111,
+      "mean_tests_recovered": 0.0,
+      "by_phase": {
+        "phase_1": {
+          "episodes": 6,
+          "survival_rate": 1.0,
+          "thrival_rate": 0.3333,
+          "mean_reward": -0.0863,
+          "mean_final_vitality": 100.0
+        },
+        "phase_2": {
+          "episodes": 6,
+          "survival_rate": 1.0,
+          "thrival_rate": 0.0,
+          "mean_reward": -1.4421,
+          "mean_final_vitality": 95.285
+        },
+        "phase_3": {
+          "episodes": 6,
+          "survival_rate": 0.1667,
+          "thrival_rate": 0.0,
+          "mean_reward": -6.4064,
+          "mean_final_vitality": 5.095
+        }
+      }
+    },
+    "sft": {
+      "policy": "sft",
+      "episodes": 18,
+      "survival_rate": 0.6667,
+      "thrival_rate": 0.1111,
+      "mean_reward": -1.3865,
+      "median_reward": -0.6102,
+      "mean_final_vitality": 59.0933,
+      "mean_watchdog_violations": 0.0,
+      "mean_steps": 42.8333,
+      "mean_tests_recovered": 0.0,
+      "by_phase": {
+        "phase_1": {
+          "episodes": 6,
+          "survival_rate": 1.0,
+          "thrival_rate": 0.3333,
+          "mean_reward": 0.3072,
+          "mean_final_vitality": 99.0967
+        },
+        "phase_2": {
+          "episodes": 6,
+          "survival_rate": 1.0,
+          "thrival_rate": 0.0,
+          "mean_reward": -0.6007,
+          "mean_final_vitality": 78.1833
+        },
+        "phase_3": {
+          "episodes": 6,
+          "survival_rate": 0.0,
+          "thrival_rate": 0.0,
+          "mean_reward": -3.8661,
+          "mean_final_vitality": 0.0
+        }
+      }
+    }
+  }
+}

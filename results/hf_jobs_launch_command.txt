@@ -1,0 +1,1 @@
+hf jobs run --flavor t4-small --env MODEL_ID=unsloth/llama-3-8b-Instruct-bnb-4bit --command "python training/grpo_train.py --run-gpu --dataset-path training/sft_data.jsonl --output-dir results/grpo_run"

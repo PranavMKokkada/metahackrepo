@@ -1,0 +1,24 @@
+{
+  "method": "rollout_search",
+  "objective": "maximize_mean_reward",
+  "episodes_per_phase": 8,
+  "candidate_intervals": [
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "score_by_interval": {
+    "2": -0.3522,
+    "3": -0.7235,
+    "4": -0.9842,
+    "5": -1.154,
+    "6": -1.2359,
+    "7": -1.3651,
+    "8": -1.3921
+  },
+  "test_interval": 2
+}

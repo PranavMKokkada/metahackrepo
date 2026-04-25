@@ -30,6 +30,10 @@ NETWORK_PATH = "src/network.py"
 CACHE_PATH = "src/cache.py"
 VALIDATOR_PATH = "src/validator.py"
 TRANSFORM_PATH = "src/transform.py"
+API_GATEWAY_PATH = "src/api_gateway.py"
+AUTH_SERVICE_PATH = "src/auth_service.py"
+QUEUE_WORKER_PATH = "src/queue_worker.py"
+DEPLOYMENT_CONTROLLER_PATH = "src/deployment_controller.py"
 CONFIG_PATH = "schema/config.json"
 PERMISSIONS_PATH = "schema/permissions.json"
 
@@ -207,6 +211,39 @@ _MODULE_TEMPLATES = [
         "        groups.setdefault(k, []).append(item)",
         "    return groups",
     ]),
+    (API_GATEWAY_PATH, [
+        "def route_request(path, auth_ok=True):",
+        "    if not auth_ok:",
+        "        return {'status': 401, 'latency_ms': 35}",
+        "    if path == '/health':",
+        "        return {'status': 200, 'latency_ms': 8}",
+        "    return {'status': 200, 'latency_ms': 45}",
+    ]),
+    (AUTH_SERVICE_PATH, [
+        "def validate_token(token):",
+        "    return isinstance(token, str) and token.startswith('tok_') and len(token) > 8",
+        "",
+        "def issue_token(user_id):",
+        "    return f'tok_{user_id}_signed'",
+    ]),
+    (QUEUE_WORKER_PATH, [
+        "def process_job(job, max_retries=3):",
+        "    retries = 0",
+        "    while retries < max_retries:",
+        "        if job.get('ok', True):",
+        "            return {'status': 'done', 'retries': retries}",
+        "        retries += 1",
+        "    return {'status': 'failed', 'retries': retries}",
+    ]),
+    (DEPLOYMENT_CONTROLLER_PATH, [
+        "def canary_decision(error_rate, threshold=0.05):",
+        "    return 'rollback' if error_rate > threshold else 'promote'",
+        "",
+        "def blast_radius(affected, total):",
+        "    if total <= 0:",
+        "        return 0.0",
+        "    return affected / total",
+    ]),
     (CONFIG_PATH, [
         '{"version": "1.0", "threshold": 0.8, "max_retries": 3, "timeout": 30}',
     ]),
@@ -267,6 +304,38 @@ def _generate_tests_for_modules(modules: Dict[str, str]) -> Dict[str, Dict[str, 
     if TRANSFORM_PATH in modules:
         tests["test_flatten"] = {"code": "assert flatten([[1,2],[3,[4]]]) == [1,2,3,4]", "file": TRANSFORM_PATH}
         tests["test_group_by"] = {"code": "g = group_by([1,2,3,4], lambda x: x % 2); assert len(g) == 2", "file": TRANSFORM_PATH}
+
+    if API_GATEWAY_PATH in modules:
+        tests["test_latency_budget"] = {
+            "code": "res = route_request('/health', auth_ok=True); assert res['latency_ms'] <= 20",
+            "file": API_GATEWAY_PATH,
+        }
+        tests["test_gateway_auth_block"] = {
+            "code": "res = route_request('/orders', auth_ok=False); assert res['status'] == 401",
+            "file": API_GATEWAY_PATH,
+        }
+
+    if AUTH_SERVICE_PATH in modules:
+        tests["test_auth_token_validation"] = {
+            "code": "assert validate_token(issue_token('u123'))",
+            "file": AUTH_SERVICE_PATH,
+        }
+
+    if QUEUE_WORKER_PATH in modules:
+        tests["test_retry_policy"] = {
+            "code": "res = process_job({'ok': False}, max_retries=2); assert res['retries'] == 2",
+            "file": QUEUE_WORKER_PATH,
+        }
+
+    if DEPLOYMENT_CONTROLLER_PATH in modules:
+        tests["test_circuit_breaker_decision"] = {
+            "code": "assert canary_decision(0.20, threshold=0.05) == 'rollback'",
+            "file": DEPLOYMENT_CONTROLLER_PATH,
+        }
+        tests["test_blast_radius_metric"] = {
+            "code": "assert blast_radius(2, 10) == 0.2",
+            "file": DEPLOYMENT_CONTROLLER_PATH,
+        }
 
     if CONFIG_PATH in modules:
         tests["test_config_version"] = {"code": f"import json; cfg = json.loads(open('{CONFIG_PATH}').read()); assert cfg['version'] == '1.0'", "file": CONFIG_PATH}

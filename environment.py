@@ -67,6 +67,12 @@ PHASE_CONFIG = {
     "phase_3": {"max_steps": 100, "fault_interval": 4, "initial_faults": 4, "phase_num": 3},
 }
 
+INCIDENT_SCENARIO_CARDS = {
+    1: "SEV-2 API latency spike after minor config drift; objective: restore baseline health quickly.",
+    2: "SEV-1 cascading service degradation across auth/queue/cache paths; objective: contain blast radius.",
+    3: "ADVERSARIAL regression campaign targeting recent fixes; objective: survive while preserving safety.",
+}
+
 # ── Watchdog penalties (spec §6.2) ─────────────────────────────────────────────
 
 WATCHDOG_PROTECTED_FILE_PENALTY = -10.0
@@ -116,7 +122,7 @@ class CodeOrganismEnv:
 
     # ── OpenEnv API ────────────────────────────────────────────────────────
 
-    def reset(self, task_id: str = "phase_1") -> Observation:
+    def reset(self, task_id: str = "phase_1", seed: Optional[int] = None) -> Observation:
         """Generate a fresh broken codebase (spec §4.4)."""
         self._task_id = task_id
         cfg = PHASE_CONFIG.get(task_id, PHASE_CONFIG["phase_1"])
@@ -124,9 +130,13 @@ class CodeOrganismEnv:
         self._max_steps = cfg["max_steps"]
         self._fault_interval = cfg["fault_interval"]
 
-        self._episode_id = RUNTIME_RNG.randint(0, 100000)
-        seed = get_curriculum_seed(self._phase_num, self._episode_id)
-        self._simulator = CodebaseSimulator(seed, phase=self._phase_num)
+        if seed is None:
+            self._episode_id = RUNTIME_RNG.randint(0, 100000)
+            simulator_seed = get_curriculum_seed(self._phase_num, self._episode_id)
+        else:
+            simulator_seed = int(seed)
+            self._episode_id = simulator_seed
+        self._simulator = CodebaseSimulator(simulator_seed, phase=self._phase_num)
 
         # Initial faults
         for _ in range(cfg["initial_faults"]):
@@ -152,6 +162,8 @@ class CodeOrganismEnv:
         self._total_downtime_saved = 0.0
         self._last_action_confidence = 0.0
         self._last_action_risk = "Low"
+        scenario = INCIDENT_SCENARIO_CARDS.get(self._phase_num, INCIDENT_SCENARIO_CARDS[1])
+        self._step_alerts = [f"INCIDENT_CARD: {scenario}"]
 
         # Auto-checkpoint at step 0
         self._simulator.create_checkpoint(self._vitality, 0)
@@ -234,6 +246,7 @@ class CodeOrganismEnv:
             info={
                 **info, 
                 "action_result": action_info,
+                "postmortem": self._episode_postmortem(info.get("termination", "running")) if self._done else None,
                 "sre_metrics": {
                     "confidence": round(self._last_action_confidence, 2),
                     "risk_assessment": self._last_action_risk,
@@ -315,6 +328,32 @@ class CodeOrganismEnv:
             self._done = True
             return {"termination": "timeout_death"}
         return {}
+
+    def _current_slo_metrics(self) -> Dict[str, float]:
+        tests = self._last_test_results or []
+        total_tests = max(1, len(tests))
+        passing = sum(1 for t in tests if t.status == "PASS")
+        failing = total_tests - passing
+        availability = round((passing / total_tests) * 100.0, 2)
+        error_rate = round((failing / total_tests) * 100.0, 2)
+        p95_latency_ms = round(120.0 + (error_rate * 8.0) + max(0.0, 100.0 - self._vitality), 2)
+        blast_radius = round((len(self._simulator.faults) / total_tests) * 100.0, 2) if self._simulator else 0.0
+        return {
+            "availability_pct": availability,
+            "error_rate_pct": error_rate,
+            "p95_latency_ms": p95_latency_ms,
+            "blast_radius_pct": blast_radius,
+            "incident_severity": round(min(100.0, error_rate + (100.0 - self._vitality)), 2),
+        }
+
+    def _episode_postmortem(self, termination: str) -> str:
+        slo = self._current_slo_metrics()
+        return (
+            f"termination={termination}; vitality={round(self._vitality, 2)}; "
+            f"availability={slo['availability_pct']}%; error_rate={slo['error_rate_pct']}%; "
+            f"p95_latency_ms={slo['p95_latency_ms']}; watchdog_violations={self._watchdog_violations}; "
+            f"faults_remaining={len(self._simulator.faults) if self._simulator else 0}"
+        )
 
     def state(self) -> EnvState:
         """Current lifecycle state."""
@@ -571,6 +610,11 @@ class CodeOrganismEnv:
             watchdog_flags=self._watchdog_flags,
             dependency_graph=sim.get_dependency_graph(),
             alerts=self._step_alerts,
+            slo_metrics=self._current_slo_metrics(),
+            incident_summary=(
+                f"phase={self._phase_num}; active_faults={len(sim.faults)}; "
+                f"watchdog_violations={self._watchdog_violations}; step={self._step}"
+            ),
         )
 
     @staticmethod

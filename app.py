@@ -1,4 +1,4 @@
-"""FastAPI application for CodeOrganismVM — Hostile Execution Environment."""
+"""FastAPI application for Autonomous SRE OpenEnv environment."""
 
 from __future__ import annotations
 
@@ -39,10 +39,10 @@ RATE_LIMIT_MAX_REQUESTS = int(os.environ.get("CODEORGANISM_RATE_LIMIT_MAX", "120
 _rate_limit_buckets: Dict[str, Deque[float]] = defaultdict(deque)
 
 app = FastAPI(
-    title="CodeOrganismVM — Hostile Execution Environment",
+    title="Autonomous SRE Control Center",
     description=(
-        "An LLM agent lives inside a broken, hostile execution environment. "
-        "The organism must self-heal, self-correct, and thrive — or die."
+        "OpenEnv environment where an agent performs incident response in a "
+        "self-corrupting service sandbox."
     ),
     version="1.0.0",
 )
@@ -111,7 +111,7 @@ def _get_env(session_id: Optional[str] = None):
 def root():
     return {
         "status": "ok",
-        "environment": "code-organism-vm",
+        "environment": "autonomous-sre",
         "version": "1.0.0",
     }
 
@@ -119,21 +119,20 @@ def root():
 def health():
     return {
         "status": "healthy",
-        "environment": "code-organism-vm",
+        "environment": "autonomous-sre",
         "version": "1.0.0",
     }
 
 @app.get("/metadata")
 def metadata():
     return {
-        "name": "code-organism-vm",
+        "name": "autonomous-sre",
         "description": (
-            "A hostile execution environment where an agent must self-heal "
-            "a continuously corrupting codebase."
+            "Autonomous SRE OpenEnv environment for incident-response policy training."
         ),
         "version": "1.0.0",
-        "author": "Andrea",
-        "tags": ["self-healing", "hostile-environment", "llm-agent", "organism"],
+        "author": "Team Autonomous SRE",
+        "tags": ["autonomous-sre", "openenv", "incident-response", "llm-agent"],
         "tasks": list(TASK_DEFINITIONS.keys()),
         "num_tasks": len(TASK_DEFINITIONS),
     }

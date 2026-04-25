@@ -20,6 +20,10 @@ id_ed25519
 *.docx
 *.ipynb
 training/*.jsonl
+results/
+trainingthings_images/
+training/hf_jobs/
+training/policies/
 audit_report.md
 spec_text.txt
 tmp_pytest/

@@ -1,6 +1,6 @@
 name: autonomous-sre
 version: 1.0.0
-description: An industry-grade autonomous SRE training environment where LLMs learn to maintain SLA compliance in a self-corrupting chaos sandbox.
+description: Autonomous SRE OpenEnv environment for incident-response policy evaluation in a self-corrupting chaos sandbox.
 environment:
   type: python
   entrypoint: app.py

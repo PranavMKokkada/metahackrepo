@@ -32,7 +32,7 @@ def _check_health(url: str, tally: Callable[[bool], None]) -> None:
         tally(check("GET / returns 200", response.status_code == 200))
         body = response.json()
         tally(check("Response has 'status' field", "status" in body, str(body)))
-        tally(check("Environment is code-organism-vm", body.get("environment") == "code-organism-vm"))
+        tally(check("Environment is autonomous-sre", body.get("environment") == "autonomous-sre"))
     except requests.RequestException as exc:
         tally(check("Server reachable", False, str(exc)))
 
