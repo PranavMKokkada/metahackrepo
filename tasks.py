@@ -80,7 +80,7 @@ TASK_DEFINITIONS: Dict[str, TaskDefinition] = {
 def run_grader(task_id: str, actions: List[dict]) -> dict:
     """Replay an action sequence and grade the episode."""
     env = CodeOrganismEnv()
-    obs = env.reset(task_id)
+    env.reset(task_id)
     per_step: List[dict] = []
     total_reward = 0.0
     watchdog_total = 0

@@ -196,4 +196,5 @@ def list_sessions():
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 7860))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    host = os.environ.get("HOST", "127.0.0.1")
+    uvicorn.run(app, host=host, port=port)
