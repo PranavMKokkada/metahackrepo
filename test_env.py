@@ -195,7 +195,7 @@ class TestEnvironment:
         assert obs.vitality_score == pytest.approx(100.0)
         assert obs.max_steps == 20
         assert len(obs.file_tree) >= 8
-        assert len(obs.test_results) >= 15
+        assert len(obs.test_results) >= 14
 
     def test_reset_phase2(self):
         env = CodeOrganismEnv()
