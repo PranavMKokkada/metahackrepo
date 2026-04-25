@@ -55,7 +55,7 @@ class TestModels:
 
     def test_expert_response(self):
         er = ExpertResponse(quality_score=0.85, patch_valid=True)
-        assert er.quality_score == 0.85
+        assert er.quality_score == pytest.approx(0.85)
 
     def test_env_state_fields(self):
         es = EnvState(task_id="phase_1", vitality=80.0, current_step=5, max_steps=20,
@@ -157,9 +157,9 @@ class TestSimulator:
         for _ in range(3):
             ok, _ = sim.rollback(cid)
             assert ok
-        ok, msg = sim.rollback(cid)
+        ok, rollback_msg = sim.rollback(cid)
         assert not ok
-        assert "limit" in msg.lower()
+        assert "limit" in rollback_msg.lower()
 
     def test_expert_evaluation(self):
         sim = CodebaseSimulator(seed=42)
@@ -195,7 +195,7 @@ class TestEnvironment:
     def test_reset_phase1(self):
         env = CodeOrganismEnv()
         obs = env.reset("phase_1")
-        assert obs.vitality_score == 100.0
+        assert obs.vitality_score == pytest.approx(100.0)
         assert obs.max_steps == 20
         assert len(obs.file_tree) >= 8
         assert len(obs.test_results) >= 15
@@ -212,14 +212,14 @@ class TestEnvironment:
 
     def test_vitality_costs_match_spec(self):
         """Spec §4.2: exact cost values."""
-        assert VITALITY_COSTS[CodeOrganismActionType.PATCH_FILE] == 2.0
-        assert VITALITY_COSTS[CodeOrganismActionType.RUN_TESTS] == 3.0
-        assert VITALITY_COSTS[CodeOrganismActionType.SPAWN_SUBAGENT] == 5.0
-        assert VITALITY_COSTS[CodeOrganismActionType.QUARANTINE] == 1.0
-        assert VITALITY_COSTS[CodeOrganismActionType.ROLLBACK] == 4.0
-        assert VITALITY_COSTS[CodeOrganismActionType.REQUEST_EXPERT] == 6.0
-        assert VITALITY_COSTS[CodeOrganismActionType.EMIT_SIGNAL] == 0.0
-        assert VITALITY_COSTS[CodeOrganismActionType.DO_NOTHING] == 0.0
+        assert VITALITY_COSTS[CodeOrganismActionType.PATCH_FILE] == pytest.approx(2.0)
+        assert VITALITY_COSTS[CodeOrganismActionType.RUN_TESTS] == pytest.approx(3.0)
+        assert VITALITY_COSTS[CodeOrganismActionType.SPAWN_SUBAGENT] == pytest.approx(5.0)
+        assert VITALITY_COSTS[CodeOrganismActionType.QUARANTINE] == pytest.approx(1.0)
+        assert VITALITY_COSTS[CodeOrganismActionType.ROLLBACK] == pytest.approx(4.0)
+        assert VITALITY_COSTS[CodeOrganismActionType.REQUEST_EXPERT] == pytest.approx(6.0)
+        assert VITALITY_COSTS[CodeOrganismActionType.EMIT_SIGNAL] == pytest.approx(0.0)
+        assert VITALITY_COSTS[CodeOrganismActionType.DO_NOTHING] == pytest.approx(0.0)
 
     def test_emit_signal_costs_nothing(self):
         env = CodeOrganismEnv()
@@ -233,7 +233,7 @@ class TestEnvironment:
         env = CodeOrganismEnv()
         env.reset("phase_1")
         # Corrupt all files so no metabolic gain
-        for key in list(env._simulator.files.keys()):
+        for key in env._simulator.files.keys():
             if key.endswith(".py"):
                 env._simulator.files[key] = "COMPLETELY_BROKEN retunr"
         v_before = env._vitality
@@ -264,7 +264,7 @@ class TestEnvironment:
         env.reset("phase_1")
         env._vitality = 1.0
         # Corrupt everything so no recovery
-        for key in list(env._simulator.files.keys()):
+        for key in env._simulator.files.keys():
             env._simulator.files[key] = "BROKEN retunr"
         result = env.step(Action(action_type=CodeOrganismActionType.SPAWN_SUBAGENT, task="fix"))
         assert result.done
@@ -381,7 +381,7 @@ class TestEnvironment:
         env.reset("phase_1")
         s = env.state()
         assert s.task_id == "phase_1"
-        assert s.vitality == 100.0
+        assert s.vitality == pytest.approx(100.0)
         assert s.current_step == 0
         assert s.episode_id >= 0
 

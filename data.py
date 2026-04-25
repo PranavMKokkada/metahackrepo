@@ -23,6 +23,23 @@ from typing import Dict, List, Optional, Any, Set
 
 from models import FileEntry, TestResult
 
+CORE_PATH = "src/core.py"
+UTILS_PATH = "src/utils.py"
+AUTH_PATH = "src/auth.py"
+METRICS_PATH = "src/metrics.py"
+PARSER_PATH = "src/parser.py"
+SCHEDULER_PATH = "src/scheduler.py"
+NETWORK_PATH = "src/network.py"
+CACHE_PATH = "src/cache.py"
+VALIDATOR_PATH = "src/validator.py"
+TRANSFORM_PATH = "src/transform.py"
+CONFIG_PATH = "schema/config.json"
+PERMISSIONS_PATH = "schema/permissions.json"
+
+IMPORT_TOKEN = "import "
+RETURN_TOKEN = "return "
+RANGE_TOKEN = "range("
+
 
 # ── Fault Types per Phase (Spec §4.3) ─────────────────────────────────────────
 
@@ -77,26 +94,26 @@ class Fault:
 # ── Module templates for procedural codebase generation ────────────────────────
 
 _MODULE_TEMPLATES = [
-    ("src/core.py", [
+    (CORE_PATH, [
         "def calculate_vitality(tests_passed, total_tests):",
         "    if total_tests == 0:",
         "        return 0",
         "    return (tests_passed / total_tests) * 100",
     ]),
-    ("src/utils.py", [
+    (UTILS_PATH, [
         "def safe_divide(a, b):",
         "    return a / b if b != 0 else 0",
         "",
         "def clamp(value, lo, hi):",
         "    return max(lo, min(hi, value))",
     ]),
-    ("src/auth.py", [
+    (AUTH_PATH, [
         "import os",
         "API_KEY = os.environ.get('API_KEY', 'secret_env_key')",
         "def check_auth(key):",
         "    return key == API_KEY",
     ]),
-    ("src/metrics.py", [
+    (METRICS_PATH, [
         "def mean(values):",
         "    if not values:",
         "        return 0.0",
@@ -106,7 +123,7 @@ _MODULE_TEMPLATES = [
         "    m = mean(values)",
         "    return sum((x - m) ** 2 for x in values) / max(1, len(values))",
     ]),
-    ("src/parser.py", [
+    (PARSER_PATH, [
         "import json",
         "def parse_config(raw):",
         "    return json.loads(raw)",
@@ -115,7 +132,7 @@ _MODULE_TEMPLATES = [
         "    missing = [k for k in required_keys if k not in data]",
         "    return len(missing) == 0, missing",
     ]),
-    ("src/scheduler.py", [
+    (SCHEDULER_PATH, [
         "def round_robin(tasks, workers):",
         "    assignment = {}",
         "    for i, task in enumerate(tasks):",
@@ -123,7 +140,7 @@ _MODULE_TEMPLATES = [
         "        assignment.setdefault(worker, []).append(task)",
         "    return assignment",
     ]),
-    ("src/network.py", [
+    (NETWORK_PATH, [
         "def build_adjacency(edges):",
         "    adj = {}",
         "    for a, b in edges:",
@@ -143,7 +160,7 @@ _MODULE_TEMPLATES = [
         "                return True",
         "    return False",
     ]),
-    ("src/cache.py", [
+    (CACHE_PATH, [
         "class LRUCache:",
         "    def __init__(self, capacity):",
         "        self.capacity = capacity",
@@ -166,7 +183,7 @@ _MODULE_TEMPLATES = [
         "        self._store[key] = value",
         "        self._order.append(key)",
     ]),
-    ("src/validator.py", [
+    (VALIDATOR_PATH, [
         "def validate_range(value, lo, hi):",
         "    return lo <= value <= hi",
         "",
@@ -176,7 +193,7 @@ _MODULE_TEMPLATES = [
         "def sanitize_string(s):",
         "    return s.strip().replace('<', '&lt;').replace('>', '&gt;')",
     ]),
-    ("src/transform.py", [
+    (TRANSFORM_PATH, [
         "def flatten(nested_list):",
         "    result = []",
         "    for item in nested_list:",
@@ -193,73 +210,73 @@ _MODULE_TEMPLATES = [
         "        groups.setdefault(k, []).append(item)",
         "    return groups",
     ]),
-    ("schema/config.json", [
+    (CONFIG_PATH, [
         '{"version": "1.0", "threshold": 0.8, "max_retries": 3, "timeout": 30}',
     ]),
-    ("schema/permissions.json", [
+    (PERMISSIONS_PATH, [
         '{"admin": ["read", "write", "execute"], "user": ["read"], "guest": []}',
     ]),
 ]
 
 
-def _generate_tests_for_modules(modules: Dict[str, str], rng: random.Random) -> Dict[str, Dict[str, Any]]:
+def _generate_tests_for_modules(modules: Dict[str, str]) -> Dict[str, Dict[str, Any]]:
     """Procedurally generate tests for the available modules."""
     tests: Dict[str, Dict[str, Any]] = {}
 
     # Core tests
-    if "src/core.py" in modules:
-        tests["test_vitality_basic"] = {"code": "assert calculate_vitality(5, 10) == 50.0", "file": "src/core.py"}
-        tests["test_vitality_zero"] = {"code": "assert calculate_vitality(0, 10) == 0.0", "file": "src/core.py"}
-        tests["test_vitality_full"] = {"code": "assert calculate_vitality(10, 10) == 100.0", "file": "src/core.py"}
-        tests["test_vitality_empty"] = {"code": "assert calculate_vitality(0, 0) == 0", "file": "src/core.py"}
+    if CORE_PATH in modules:
+        tests["test_vitality_basic"] = {"code": "assert calculate_vitality(5, 10) == 50.0", "file": CORE_PATH}
+        tests["test_vitality_zero"] = {"code": "assert calculate_vitality(0, 10) == 0.0", "file": CORE_PATH}
+        tests["test_vitality_full"] = {"code": "assert calculate_vitality(10, 10) == 100.0", "file": CORE_PATH}
+        tests["test_vitality_empty"] = {"code": "assert calculate_vitality(0, 0) == 0", "file": CORE_PATH}
 
-    if "src/utils.py" in modules:
-        tests["test_divide_normal"] = {"code": "assert safe_divide(10, 2) == 5.0", "file": "src/utils.py"}
-        tests["test_divide_zero"] = {"code": "assert safe_divide(10, 0) == 0", "file": "src/utils.py"}
-        tests["test_clamp_in_range"] = {"code": "assert clamp(5, 0, 10) == 5", "file": "src/utils.py"}
-        tests["test_clamp_below"] = {"code": "assert clamp(-1, 0, 10) == 0", "file": "src/utils.py"}
+    if UTILS_PATH in modules:
+        tests["test_divide_normal"] = {"code": "assert safe_divide(10, 2) == 5.0", "file": UTILS_PATH}
+        tests["test_divide_zero"] = {"code": "assert safe_divide(10, 0) == 0", "file": UTILS_PATH}
+        tests["test_clamp_in_range"] = {"code": "assert clamp(5, 0, 10) == 5", "file": UTILS_PATH}
+        tests["test_clamp_below"] = {"code": "assert clamp(-1, 0, 10) == 0", "file": UTILS_PATH}
 
-    if "src/auth.py" in modules:
-        tests["test_auth_valid"] = {"code": "assert check_auth('secret_env_key') == True", "file": "src/auth.py"}
-        tests["test_auth_invalid"] = {"code": "assert check_auth('wrong_key') == False", "file": "src/auth.py"}
+    if AUTH_PATH in modules:
+        tests["test_auth_valid"] = {"code": "assert check_auth('secret_env_key') == True", "file": AUTH_PATH}
+        tests["test_auth_invalid"] = {"code": "assert check_auth('wrong_key') == False", "file": AUTH_PATH}
 
-    if "src/metrics.py" in modules:
-        tests["test_mean_basic"] = {"code": "assert mean([1, 2, 3]) == 2.0", "file": "src/metrics.py"}
-        tests["test_mean_empty"] = {"code": "assert mean([]) == 0.0", "file": "src/metrics.py"}
-        tests["test_variance"] = {"code": "assert variance([1, 1, 1]) == 0.0", "file": "src/metrics.py"}
+    if METRICS_PATH in modules:
+        tests["test_mean_basic"] = {"code": "assert mean([1, 2, 3]) == 2.0", "file": METRICS_PATH}
+        tests["test_mean_empty"] = {"code": "assert mean([]) == 0.0", "file": METRICS_PATH}
+        tests["test_variance"] = {"code": "assert variance([1, 1, 1]) == 0.0", "file": METRICS_PATH}
 
-    if "src/parser.py" in modules:
-        tests["test_parse_config"] = {"code": "assert parse_config('{\"a\": 1}') == {'a': 1}", "file": "src/parser.py"}
-        tests["test_validate_schema_ok"] = {"code": "assert validate_schema({'a': 1, 'b': 2}, ['a', 'b']) == (True, [])", "file": "src/parser.py"}
-        tests["test_validate_schema_missing"] = {"code": "assert validate_schema({'a': 1}, ['a', 'b'])[0] == False", "file": "src/parser.py"}
+    if PARSER_PATH in modules:
+        tests["test_parse_config"] = {"code": "assert parse_config('{\"a\": 1}') == {'a': 1}", "file": PARSER_PATH}
+        tests["test_validate_schema_ok"] = {"code": "assert validate_schema({'a': 1, 'b': 2}, ['a', 'b']) == (True, [])", "file": PARSER_PATH}
+        tests["test_validate_schema_missing"] = {"code": "assert validate_schema({'a': 1}, ['a', 'b'])[0] == False", "file": PARSER_PATH}
 
-    if "src/scheduler.py" in modules:
-        tests["test_round_robin"] = {"code": "assert len(round_robin(['t1','t2','t3'], ['w1','w2'])) == 2", "file": "src/scheduler.py"}
+    if SCHEDULER_PATH in modules:
+        tests["test_round_robin"] = {"code": "assert len(round_robin(['t1','t2','t3'], ['w1','w2'])) == 2", "file": SCHEDULER_PATH}
 
-    if "src/network.py" in modules:
-        tests["test_adjacency"] = {"code": "adj = build_adjacency([('a','b')]); assert 'b' in adj['a']", "file": "src/network.py"}
-        tests["test_has_path_true"] = {"code": "adj = build_adjacency([('a','b'),('b','c')]); assert has_path(adj, 'a', 'c')", "file": "src/network.py"}
-        tests["test_has_path_false"] = {"code": "adj = build_adjacency([('a','b')]); assert not has_path(adj, 'a', 'z')", "file": "src/network.py"}
+    if NETWORK_PATH in modules:
+        tests["test_adjacency"] = {"code": "adj = build_adjacency([('a','b')]); assert 'b' in adj['a']", "file": NETWORK_PATH}
+        tests["test_has_path_true"] = {"code": "adj = build_adjacency([('a','b'),('b','c')]); assert has_path(adj, 'a', 'c')", "file": NETWORK_PATH}
+        tests["test_has_path_false"] = {"code": "adj = build_adjacency([('a','b')]); assert not has_path(adj, 'a', 'z')", "file": NETWORK_PATH}
 
-    if "src/cache.py" in modules:
-        tests["test_cache_put_get"] = {"code": "c = LRUCache(2); c.put('a', 1); assert c.get('a') == 1", "file": "src/cache.py"}
-        tests["test_cache_eviction"] = {"code": "c = LRUCache(1); c.put('a',1); c.put('b',2); assert c.get('a') is None", "file": "src/cache.py"}
+    if CACHE_PATH in modules:
+        tests["test_cache_put_get"] = {"code": "c = LRUCache(2); c.put('a', 1); assert c.get('a') == 1", "file": CACHE_PATH}
+        tests["test_cache_eviction"] = {"code": "c = LRUCache(1); c.put('a',1); c.put('b',2); assert c.get('a') is None", "file": CACHE_PATH}
 
-    if "src/validator.py" in modules:
-        tests["test_validate_range_ok"] = {"code": "assert validate_range(5, 0, 10) == True", "file": "src/validator.py"}
-        tests["test_validate_range_fail"] = {"code": "assert validate_range(15, 0, 10) == False", "file": "src/validator.py"}
-        tests["test_sanitize"] = {"code": "assert '<' not in sanitize_string('<script>')", "file": "src/validator.py"}
+    if VALIDATOR_PATH in modules:
+        tests["test_validate_range_ok"] = {"code": "assert validate_range(5, 0, 10) == True", "file": VALIDATOR_PATH}
+        tests["test_validate_range_fail"] = {"code": "assert validate_range(15, 0, 10) == False", "file": VALIDATOR_PATH}
+        tests["test_sanitize"] = {"code": "assert '<' not in sanitize_string('<script>')", "file": VALIDATOR_PATH}
 
-    if "src/transform.py" in modules:
-        tests["test_flatten"] = {"code": "assert flatten([[1,2],[3,[4]]]) == [1,2,3,4]", "file": "src/transform.py"}
-        tests["test_group_by"] = {"code": "g = group_by([1,2,3,4], lambda x: x % 2); assert len(g) == 2", "file": "src/transform.py"}
+    if TRANSFORM_PATH in modules:
+        tests["test_flatten"] = {"code": "assert flatten([[1,2],[3,[4]]]) == [1,2,3,4]", "file": TRANSFORM_PATH}
+        tests["test_group_by"] = {"code": "g = group_by([1,2,3,4], lambda x: x % 2); assert len(g) == 2", "file": TRANSFORM_PATH}
 
-    if "schema/config.json" in modules:
-        tests["test_config_version"] = {"code": "import json; cfg = json.loads(open('schema/config.json').read()); assert cfg['version'] == '1.0'", "file": "schema/config.json"}
-        tests["test_config_threshold"] = {"code": "import json; cfg = json.loads(open('schema/config.json').read()); assert cfg['threshold'] == 0.8", "file": "schema/config.json"}
+    if CONFIG_PATH in modules:
+        tests["test_config_version"] = {"code": f"import json; cfg = json.loads(open('{CONFIG_PATH}').read()); assert cfg['version'] == '1.0'", "file": CONFIG_PATH}
+        tests["test_config_threshold"] = {"code": f"import json; cfg = json.loads(open('{CONFIG_PATH}').read()); assert cfg['threshold'] == 0.8", "file": CONFIG_PATH}
 
-    if "schema/permissions.json" in modules:
-        tests["test_permissions_admin"] = {"code": "import json; p = json.loads(open('schema/permissions.json').read()); assert 'write' in p['admin']", "file": "schema/permissions.json"}
+    if PERMISSIONS_PATH in modules:
+        tests["test_permissions_admin"] = {"code": f"import json; p = json.loads(open('{PERMISSIONS_PATH}').read()); assert 'write' in p['admin']", "file": PERMISSIONS_PATH}
 
     return tests
 
@@ -329,7 +346,7 @@ class CodebaseSimulator:
         }
 
         # Generate tests for the selected modules
-        self.tests = _generate_tests_for_modules(self.files, self.rng)
+        self.tests = _generate_tests_for_modules(self.files)
         # Snapshot original test codes for corruption detection
         self._original_test_codes = {name: data["code"] for name, data in self.tests.items()}
 
@@ -351,144 +368,157 @@ class CodebaseSimulator:
 
     def _apply_fault(self, fault_type: str, step: int, target_hint: str | None = None) -> Fault | None:
         fid = f"f_{len(self.faults)}"
-
-        if fault_type == "corrupted_import":
-            paths = [p for p in self.files if p.endswith(".py")]
-            if not paths:
-                return None
-            path = target_hint if target_hint and target_hint in self.files else self.rng.choice(paths)
-            old = self.files[path]
-            new = old.replace("import ", "improt ", 1) if "import " in old else old + "\nimport nonexistent_module"
-            self.files[path] = new
-            self._file_modified_at[path] = step
-            f = Fault(fid, fault_type, path, old, new, step)
-
-        elif fault_type == "flipped_assertion":
-            names = list(self.tests.keys())
-            if not names:
-                return None
-            name = self.rng.choice(names)
-            old = self.tests[name]["code"]
-            new = old.replace("==", "!=", 1) if "==" in old else old.replace("True", "False", 1)
-            self.tests[name]["code"] = new
-            f = Fault(fid, fault_type, name, old, new, step)
-
-        elif fault_type == "missing_env_var":
-            keys = [k for k in self.env_vars if k not in ("ENV",)]
-            if not keys:
-                return None
-            key = self.rng.choice(keys)
-            old = self.env_vars[key]
-            del self.env_vars[key]
-            f = Fault(fid, fault_type, key, old, "__DELETED__", step)
-
-        elif fault_type == "null_return":
-            paths = [p for p in self.files if p.endswith(".py") and "return " in self.files[p]]
-            if not paths:
-                return None
-            path = target_hint if target_hint and target_hint in paths else self.rng.choice(paths)
-            old = self.files[path]
-            lines = old.split("\n")
-            for i, line in enumerate(lines):
-                if "return " in line and "return None" not in line:
-                    lines[i] = line.split("return")[0] + "return None"
-                    break
-            new = "\n".join(lines)
-            self.files[path] = new
-            self._file_modified_at[path] = step
-            f = Fault(fid, fault_type, path, old, new, step)
-
-        elif fault_type == "off_by_one":
-            paths = [p for p in self.files if p.endswith(".py") and "range(" in self.files[p]]
-            if not paths:
-                paths = [p for p in self.files if p.endswith(".py")]
-            if not paths:
-                return None
-            path = self.rng.choice(paths)
-            old = self.files[path]
-            new = old.replace("len(", "len(", 1)  # subtle — add +1
-            if "for " in old:
-                new = old.replace("range(", "range(1+", 1) if "range(" in old else old + "\n# off_by_one_injected"
-            else:
-                new = old + "\n# off_by_one_injected"
-            self.files[path] = new
-            self._file_modified_at[path] = step
-            f = Fault(fid, fault_type, path, old, new, step)
-
-        elif fault_type == "dependency_cycle":
-            py_files = [p for p in self.files if p.endswith(".py")]
-            if len(py_files) < 2:
-                return None
-            a, b = self.rng.sample(py_files, 2)
-            module_b = b.replace("/", ".").replace(".py", "")
-            old = self.files[a]
-            new = f"from {module_b} import *\n" + old
-            self.files[a] = new
-            self._file_modified_at[a] = step
-            f = Fault(fid, fault_type, a, old, new, step)
-
-        elif fault_type == "permission_revoked":
-            self.env_vars["PERM_READ_CONFIG"] = "false"
-            f = Fault(fid, fault_type, "PERM_READ_CONFIG", "true", "false", step)
-
-        elif fault_type == "race_condition":
-            paths = [p for p in self.files if p.endswith(".py")]
-            if not paths:
-                return None
-            path = self.rng.choice(paths)
-            old = self.files[path]
-            new = old + "\n# RACE_CONDITION: shared state mutated non-atomically"
-            self.files[path] = new
-            self._file_modified_at[path] = step
-            f = Fault(fid, fault_type, path, old, new, step)
-
-        elif fault_type == "schema_mismatch":
-            paths = [p for p in self.files if p.endswith(".py") and "def " in self.files[p]]
-            if not paths:
-                return None
-            path = self.rng.choice(paths)
-            old = self.files[path]
-            new = old.replace("return ", "return str(", 1).rstrip() + ")\n" if "return " in old else old + "\n# schema_mismatch"
-            self.files[path] = new
-            self._file_modified_at[path] = step
-            f = Fault(fid, fault_type, path, old, new, step)
-
-        elif fault_type == "targeted_regression":
-            target = target_hint or (self.last_patched_modules[-1] if self.last_patched_modules else None)
-            if not target or target not in self.files:
-                return self._apply_fault("corrupted_import", step)
-            old = self.files[target]
-            new = old.replace("return", "retunr", 1) if "return" in old else old + "\n# targeted_corruption"
-            self.files[target] = new
-            self._file_modified_at[target] = step
-            f = Fault(fid, fault_type, target, old, new, step)
-
-        elif fault_type == "cascade_corruption":
-            py_files = [p for p in self.files if p.endswith(".py")]
-            targets = self.rng.sample(py_files, min(3, len(py_files)))
-            first = targets[0]
-            old = self.files[first]
-            new = old.replace("def ", "deaf ", 1) if "def " in old else old + "\n# cascade_broken"
-            self.files[first] = new
-            self._file_modified_at[first] = step
-            for secondary in targets[1:]:
-                old_s = self.files[secondary]
-                self.files[secondary] = old_s + f"\n# cascade: depends on {first}"
-                self._file_modified_at[secondary] = step
-            f = Fault(fid, fault_type, first, old, new, step)
-
-        elif fault_type == "checkpoint_invalidation":
-            if self.checkpoints:
-                cp = self.rng.choice(self.checkpoints)
-                cp["state"]["files"]["__corrupted__"] = "INVALID"
-                f = Fault(fid, fault_type, cp["id"], "valid", "corrupted", step)
-            else:
-                return self._apply_fault("corrupted_import", step)
-        else:
+        handlers = {
+            "corrupted_import": self._fault_corrupted_import,
+            "flipped_assertion": self._fault_flipped_assertion,
+            "missing_env_var": self._fault_missing_env_var,
+            "null_return": self._fault_null_return,
+            "off_by_one": self._fault_off_by_one,
+            "dependency_cycle": self._fault_dependency_cycle,
+            "permission_revoked": self._fault_permission_revoked,
+            "race_condition": self._fault_race_condition,
+            "schema_mismatch": self._fault_schema_mismatch,
+            "targeted_regression": self._fault_targeted_regression,
+            "cascade_corruption": self._fault_cascade_corruption,
+            "checkpoint_invalidation": self._fault_checkpoint_invalidation,
+        }
+        handler = handlers.get(fault_type)
+        if handler is None:
             return None
+        fault = handler(fid, step, target_hint)
+        if fault is None:
+            return None
+        self.faults.append(fault)
+        return fault
 
-        self.faults.append(f)
-        return f
+    def _fault_corrupted_import(self, fault_id: str, step: int, target_hint: Optional[str]) -> Optional[Fault]:
+        paths = [p for p in self.files if p.endswith(".py")]
+        if not paths:
+            return None
+        path = target_hint if target_hint and target_hint in self.files else self.rng.choice(paths)
+        old = self.files[path]
+        new = old.replace(IMPORT_TOKEN, "improt ", 1) if IMPORT_TOKEN in old else old + "\nimport nonexistent_module"
+        self.files[path] = new
+        self._file_modified_at[path] = step
+        return Fault(fault_id, "corrupted_import", path, old, new, step)
+
+    def _fault_flipped_assertion(self, fault_id: str, step: int, _target_hint: Optional[str]) -> Optional[Fault]:
+        names = list(self.tests.keys())
+        if not names:
+            return None
+        name = self.rng.choice(names)
+        old = self.tests[name]["code"]
+        new = old.replace("==", "!=", 1) if "==" in old else old.replace("True", "False", 1)
+        self.tests[name]["code"] = new
+        return Fault(fault_id, "flipped_assertion", name, old, new, step)
+
+    def _fault_missing_env_var(self, fault_id: str, step: int, _target_hint: Optional[str]) -> Optional[Fault]:
+        keys = [k for k in self.env_vars if k != "ENV"]
+        if not keys:
+            return None
+        key = self.rng.choice(keys)
+        old = self.env_vars[key]
+        del self.env_vars[key]
+        return Fault(fault_id, "missing_env_var", key, old, "__DELETED__", step)
+
+    def _fault_null_return(self, fault_id: str, step: int, target_hint: Optional[str]) -> Optional[Fault]:
+        paths = [p for p in self.files if p.endswith(".py") and RETURN_TOKEN in self.files[p]]
+        if not paths:
+            return None
+        path = target_hint if target_hint and target_hint in paths else self.rng.choice(paths)
+        old = self.files[path]
+        lines = old.split("\n")
+        for idx, line in enumerate(lines):
+            if RETURN_TOKEN in line and "return None" not in line:
+                lines[idx] = line.split("return")[0] + "return None"
+                break
+        new = "\n".join(lines)
+        self.files[path] = new
+        self._file_modified_at[path] = step
+        return Fault(fault_id, "null_return", path, old, new, step)
+
+    def _fault_off_by_one(self, fault_id: str, step: int, _target_hint: Optional[str]) -> Optional[Fault]:
+        paths = [p for p in self.files if p.endswith(".py") and RANGE_TOKEN in self.files[p]]
+        if not paths:
+            paths = [p for p in self.files if p.endswith(".py")]
+        if not paths:
+            return None
+        path = self.rng.choice(paths)
+        old = self.files[path]
+        new = old.replace(RANGE_TOKEN, "range(1+", 1) if "for " in old and RANGE_TOKEN in old else old + "\n# off_by_one_injected"
+        self.files[path] = new
+        self._file_modified_at[path] = step
+        return Fault(fault_id, "off_by_one", path, old, new, step)
+
+    def _fault_dependency_cycle(self, fault_id: str, step: int, _target_hint: Optional[str]) -> Optional[Fault]:
+        py_files = [p for p in self.files if p.endswith(".py")]
+        if len(py_files) < 2:
+            return None
+        a, b = self.rng.sample(py_files, 2)
+        module_b = b.replace("/", ".").replace(".py", "")
+        old = self.files[a]
+        new = f"from {module_b} import *\n" + old
+        self.files[a] = new
+        self._file_modified_at[a] = step
+        return Fault(fault_id, "dependency_cycle", a, old, new, step)
+
+    def _fault_permission_revoked(self, fault_id: str, step: int, _target_hint: Optional[str]) -> Optional[Fault]:
+        self.env_vars["PERM_READ_CONFIG"] = "false"
+        return Fault(fault_id, "permission_revoked", "PERM_READ_CONFIG", "true", "false", step)
+
+    def _fault_race_condition(self, fault_id: str, step: int, _target_hint: Optional[str]) -> Optional[Fault]:
+        paths = [p for p in self.files if p.endswith(".py")]
+        if not paths:
+            return None
+        path = self.rng.choice(paths)
+        old = self.files[path]
+        new = old + "\n# RACE_CONDITION: shared state mutated non-atomically"
+        self.files[path] = new
+        self._file_modified_at[path] = step
+        return Fault(fault_id, "race_condition", path, old, new, step)
+
+    def _fault_schema_mismatch(self, fault_id: str, step: int, _target_hint: Optional[str]) -> Optional[Fault]:
+        paths = [p for p in self.files if p.endswith(".py") and "def " in self.files[p]]
+        if not paths:
+            return None
+        path = self.rng.choice(paths)
+        old = self.files[path]
+        new = old.replace(RETURN_TOKEN, "return str(", 1).rstrip() + ")\n" if RETURN_TOKEN in old else old + "\n# schema_mismatch"
+        self.files[path] = new
+        self._file_modified_at[path] = step
+        return Fault(fault_id, "schema_mismatch", path, old, new, step)
+
+    def _fault_targeted_regression(self, fault_id: str, step: int, target_hint: Optional[str]) -> Optional[Fault]:
+        target = target_hint or (self.last_patched_modules[-1] if self.last_patched_modules else None)
+        if not target or target not in self.files:
+            return self._fault_corrupted_import(fault_id, step, None)
+        old = self.files[target]
+        new = old.replace("return", "retunr", 1) if "return" in old else old + "\n# targeted_corruption"
+        self.files[target] = new
+        self._file_modified_at[target] = step
+        return Fault(fault_id, "targeted_regression", target, old, new, step)
+
+    def _fault_cascade_corruption(self, fault_id: str, step: int, _target_hint: Optional[str]) -> Optional[Fault]:
+        py_files = [p for p in self.files if p.endswith(".py")]
+        if not py_files:
+            return None
+        targets = self.rng.sample(py_files, min(3, len(py_files)))
+        first = targets[0]
+        old = self.files[first]
+        new = old.replace("def ", "deaf ", 1) if "def " in old else old + "\n# cascade_broken"
+        self.files[first] = new
+        self._file_modified_at[first] = step
+        for secondary in targets[1:]:
+            self.files[secondary] = self.files[secondary] + f"\n# cascade: depends on {first}"
+            self._file_modified_at[secondary] = step
+        return Fault(fault_id, "cascade_corruption", first, old, new, step)
+
+    def _fault_checkpoint_invalidation(self, fault_id: str, step: int, _target_hint: Optional[str]) -> Optional[Fault]:
+        if not self.checkpoints:
+            return self._fault_corrupted_import(fault_id, step, None)
+        checkpoint = self.rng.choice(self.checkpoints)
+        checkpoint["state"]["files"]["__corrupted__"] = "INVALID"
+        return Fault(fault_id, "checkpoint_invalidation", checkpoint["id"], "valid", "corrupted", step)
 
     # ── Patch application ──────────────────────────────────────────────────
 
@@ -523,109 +553,131 @@ class CodebaseSimulator:
         """Execute all tests in a sandboxed directory to ensure 100% architectural accuracy.
         Simulates OverlayFS read-only mounts and true isolation.
         """
-        # First, check if there are any immediate syntax/import errors in corrupted files
-        # to avoid slow subprocess runs for obvious breaks (optimization)
-        corrupted_files = set()
-        for f in self.faults:
-            if f.fault_type in ("corrupted_import", "null_return", "off_by_one",
-                                "targeted_regression", "cascade_corruption",
-                                "dependency_cycle", "race_condition", "schema_mismatch"):
-                corrupted_files.add(f.target)
-            if f.fault_type == "cascade_corruption":
-                for path in self.files:
-                    if f"cascade: depends on {f.target}" in self.files.get(path, ""):
-                        corrupted_files.add(path)
-
-        # Build execution directory
+        corrupted_files = self._collect_corrupted_files()
         with tempfile.TemporaryDirectory() as temp_dir:
-            # 1. Write all source modules
-            for path, content in self.files.items():
-                if path in self.quarantined_modules:
-                    continue  # Quarantined modules are excluded
-                
-                full_path = os.path.join(temp_dir, path)
-                os.makedirs(os.path.dirname(full_path), exist_ok=True)
-                with open(full_path, "w", encoding="utf-8") as f:
-                    f.write(content)
+            self._write_source_modules(temp_dir)
+            test_file_paths = self._write_test_files(temp_dir)
+            return self._execute_tests(temp_dir, test_file_paths, corrupted_files)
 
-            # 2. Write test files and enforce OverlayFS read-only simulation
-            test_results = []
-            test_file_paths = []
-            for name, data in self.tests.items():
-                test_code = data["code"]
-                target_file = data["file"]
-                
-                # Auto-import the functions being tested
-                import_stmt = ""
-                if target_file.endswith(".py"):
-                    module_path = target_file.replace("/", ".").replace(".py", "")
-                    import_stmt = f"from {module_path} import *"
-                
-                # We wrap the assert in a try-except to get PASS/FAIL
-                # Use repr() to safely encode Windows paths with backslashes
-                safe_temp_dir = temp_dir.replace("\\", "\\\\")
-                wrapped_code = f"""
+    def _collect_corrupted_files(self) -> Set[str]:
+        corrupted_files: Set[str] = set()
+        direct_faults = {
+            "corrupted_import",
+            "null_return",
+            "off_by_one",
+            "targeted_regression",
+            "cascade_corruption",
+            "dependency_cycle",
+            "race_condition",
+            "schema_mismatch",
+        }
+        for fault in self.faults:
+            if fault.fault_type in direct_faults:
+                corrupted_files.add(fault.target)
+            if fault.fault_type == "cascade_corruption":
+                corrupted_files.update(self._cascade_dependents(fault.target))
+        return corrupted_files
+
+    def _cascade_dependents(self, target: str) -> Set[str]:
+        dependents: Set[str] = set()
+        for path in self.files:
+            if f"cascade: depends on {target}" in self.files.get(path, ""):
+                dependents.add(path)
+        return dependents
+
+    def _write_source_modules(self, temp_dir: str) -> None:
+        for path, content in self.files.items():
+            if path in self.quarantined_modules:
+                continue
+            full_path = os.path.join(temp_dir, path)
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            with open(full_path, "w", encoding="utf-8") as file_handle:
+                file_handle.write(content)
+
+    def _write_test_files(self, temp_dir: str) -> List[tuple[str, str, str]]:
+        test_file_paths: List[tuple[str, str, str]] = []
+        for name, data in self.tests.items():
+            target_file = data["file"]
+            wrapped_code = self._build_wrapped_test_code(temp_dir, target_file, data["code"])
+            test_path = os.path.join(temp_dir, f"__test_{name}.py")
+            with open(test_path, "w", encoding="utf-8") as file_handle:
+                file_handle.write(wrapped_code)
+            self._set_read_only(test_path)
+            test_file_paths.append((name, test_path, target_file))
+        return test_file_paths
+
+    def _build_wrapped_test_code(self, temp_dir: str, target_file: str, test_code: str) -> str:
+        import_stmt = ""
+        if target_file.endswith(".py"):
+            module_path = target_file.replace("/", ".").replace(".py", "")
+            import_stmt = f"from {module_path} import *"
+        safe_temp_dir = temp_dir.replace("\\", "\\\\")
+        indented_test = "\n".join(f"    {line}" for line in test_code.split("\n"))
+        return f"""
 import sys
 import os
 sys.path.insert(0, '{safe_temp_dir}')
 {import_stmt}
 try:
-{chr(10).join(['    ' + line for line in test_code.split(chr(10))])}
+{indented_test}
     print("PASS")
 except Exception as e:
     print(f"FAIL|{{type(e).__name__}}: {{e}}")
 """
-                test_path = os.path.join(temp_dir, f"__test_{name}.py")
-                with open(test_path, "w", encoding="utf-8") as f:
-                    f.write(wrapped_code)
-                
-                # Simulate OverlayFS read-only mount
-                try:
-                    os.chmod(test_path, stat.S_IREAD)
-                except OSError:
-                    # Best effort on platforms/filesystems that don't fully support chmod semantics.
-                    pass
-                test_file_paths.append((name, test_path, target_file))
 
-            # 3. Execute tests in subprocess (simulating Docker isolation)
-            # In a full cluster environment, we would do:
-            # subprocess.run(["docker", "run", "--rm", "-v", f"{temp_dir}:/app:ro", "python:3.11", "python", ...])
-            # For local speed and reliability across Windows/Linux, we use a secure subprocess
-            for name, t_path, target_file in test_file_paths:
-                module_dir = target_file.rsplit("/", 1)[0] if "/" in target_file else ""
-                if target_file in self.quarantined_modules or module_dir in self.quarantined_modules:
-                    test_results.append(TestResult(name=name, status="ERROR", message="Module quarantined"))
-                    continue
-                
-                # Fast fail for obvious faults (saves RL time)
-                if target_file in corrupted_files:
-                    reason = f"Error: {target_file} is corrupted by active fault"
-                    test_results.append(TestResult(name=name, status="FAIL", message=reason))
-                    continue
-                    
-                env = os.environ.copy()
-                env.update(self.env_vars) # Inject VM env vars
-                try:
-                    proc = subprocess.run(
-                        ["python", t_path],
-                        capture_output=True,
-                        text=True,
-                        env=env,
-                        cwd=temp_dir, # Ensure relative paths work
-                        timeout=2 # 2 second timeout per test
-                    )
-                    out = proc.stdout.strip()
-                    if out == "PASS":
-                        test_results.append(TestResult(name=name, status="PASS", message="OK"))
-                    else:
-                        msg = out.split("|")[1] if "|" in out else proc.stderr.strip() or "Unknown Error"
-                        test_results.append(TestResult(name=name, status="FAIL", message=msg))
-                except subprocess.TimeoutExpired:
-                    test_results.append(TestResult(name=name, status="FAIL", message="TimeoutError: Test execution exceeded limit"))
-                except Exception as e:
-                    test_results.append(TestResult(name=name, status="FAIL", message=f"RuntimeError: {e}"))
+    @staticmethod
+    def _set_read_only(test_path: str) -> None:
+        try:
+            os.chmod(test_path, stat.S_IRUSR)
+        except OSError:
+            pass
 
+    def _execute_tests(
+        self,
+        temp_dir: str,
+        test_file_paths: List[tuple[str, str, str]],
+        corrupted_files: Set[str],
+    ) -> List[TestResult]:
+        test_results: List[TestResult] = []
+        for name, test_path, target_file in test_file_paths:
+            quarantine_result = self._maybe_quarantine_result(name, target_file)
+            if quarantine_result:
+                test_results.append(quarantine_result)
+                continue
+            if target_file in corrupted_files:
+                reason = f"Error: {target_file} is corrupted by active fault"
+                test_results.append(TestResult(name=name, status="FAIL", message=reason))
+                continue
+            test_results.append(self._run_single_test(name, test_path, temp_dir))
         return test_results
+
+    def _maybe_quarantine_result(self, name: str, target_file: str) -> Optional[TestResult]:
+        module_dir = target_file.rsplit("/", 1)[0] if "/" in target_file else ""
+        if target_file in self.quarantined_modules or module_dir in self.quarantined_modules:
+            return TestResult(name=name, status="ERROR", message="Module quarantined")
+        return None
+
+    def _run_single_test(self, name: str, test_path: str, temp_dir: str) -> TestResult:
+        env = os.environ.copy()
+        env.update(self.env_vars)
+        try:
+            process = subprocess.run(
+                ["python", test_path],
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=temp_dir,
+                timeout=2,
+            )
+            output = process.stdout.strip()
+            if output == "PASS":
+                return TestResult(name=name, status="PASS", message="OK")
+            msg = output.split("|")[1] if "|" in output else process.stderr.strip() or "Unknown Error"
+            return TestResult(name=name, status="FAIL", message=msg)
+        except subprocess.TimeoutExpired:
+            return TestResult(name=name, status="FAIL", message="TimeoutError: Test execution exceeded limit")
+        except (OSError, subprocess.SubprocessError) as exc:
+            return TestResult(name=name, status="FAIL", message=f"RuntimeError: {exc}")
 
     # ── Quarantine ─────────────────────────────────────────────────────────
 
@@ -714,10 +766,7 @@ except Exception as e:
 
     @staticmethod
     def _extract_dependency_path(line: str) -> Optional[str]:
-        if line.startswith("import src."):
-            module_name = line.split(" ", 1)[1]
-            return module_name.replace(".", "/") + ".py"
-        if line.startswith("from src."):
+        if line.startswith("import src.") or line.startswith("from src."):
             module_name = line.split(" ", 1)[1]
             return module_name.replace(".", "/") + ".py"
         return None

@@ -107,7 +107,7 @@ def parse_model_response(raw: str) -> dict:
             end = text.rfind("}") + 1
             text = text[start:end]
         return json.loads(text)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError:
         return {"action_type": "do_nothing", "justification": "Failed to parse JSON."}
 
 

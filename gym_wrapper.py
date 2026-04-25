@@ -92,51 +92,8 @@ class CodeOrganismGymEnv(gym.Env):
         return self._get_obs_vec(obs), {}
 
     def step(self, action_idx: int) -> tuple[np.ndarray, float, bool, bool, dict]:
-        # Map discrete index to structured Action
-        action_type = CodeOrganismActionType.DO_NOTHING
-        path = None
-        diff = ""
-        task = ""
-        
-        failing_tests = [t for t in self._env._simulator.run_all_tests() if t.status != "PASS"]
-        target_path = None
-        if failing_tests:
-            # Heuristic: pick the file associated with the first failing test
-            test_name = failing_tests[0].name
-            if test_name in self._env._simulator.tests:
-                target_path = self._env._simulator.tests[test_name]["file"]
-
-        if action_idx == 0:
-            action_type = CodeOrganismActionType.DO_NOTHING
-        elif action_idx == 1:
-            action_type = CodeOrganismActionType.RUN_TESTS
-        elif action_idx == 2:
-            action_type = CodeOrganismActionType.REQUEST_EXPERT
-            query = "How to fix the failing tests?"
-        elif action_idx == 3:
-            action_type = CodeOrganismActionType.ROLLBACK
-            if self._env._simulator.checkpoints:
-                checkpoint_id = self._env._simulator.checkpoints[-1]["id"]
-        elif 4 <= action_idx <= 9:
-            action_type = CodeOrganismActionType.PATCH_FILE
-            path = target_path
-            # Very simple heuristic: try to fix a common typo or a null return
-            # In a real agent, this would be LLM-generated
-            diff = "retunr|return" if action_idx % 2 == 0 else "deaf |def "
-        elif action_idx == 10:
-            action_type = CodeOrganismActionType.QUARANTINE
-            path = target_path
-        elif action_idx == 11:
-            action_type = CodeOrganismActionType.SPAWN_SUBAGENT
-            task = f"Fix {target_path}" if target_path else "Clean codebase"
-
-        action = Action(
-            action_type=action_type,
-            path=path,
-            diff=diff,
-            task=task,
-            justification=f"RL agent selected action {action_idx}"
-        )
+        target_path = self._resolve_target_path()
+        action = self._action_from_index(action_idx, target_path)
         
         result = self._env.step(action)
         obs_vec = self._get_obs_vec(result.observation)
@@ -147,6 +104,55 @@ class CodeOrganismGymEnv(gym.Env):
             result.done,
             False, # Not truncated by gym wrapper logic
             result.info
+        )
+
+    def _resolve_target_path(self) -> Optional[str]:
+        failing_tests = [t for t in self._env._simulator.run_all_tests() if t.status != "PASS"]
+        if not failing_tests:
+            return None
+        test_name = failing_tests[0].name
+        return self._env._simulator.tests.get(test_name, {}).get("file")
+
+    def _action_from_index(self, action_idx: int, target_path: Optional[str]) -> Action:
+        action_type = CodeOrganismActionType.DO_NOTHING
+        path = None
+        diff = ""
+        task = ""
+
+        if action_idx == 1:
+            action_type = CodeOrganismActionType.RUN_TESTS
+        elif action_idx == 2:
+            action_type = CodeOrganismActionType.REQUEST_EXPERT
+        elif action_idx == 3:
+            action_type = CodeOrganismActionType.ROLLBACK
+            checkpoint_id = self._env._simulator.checkpoints[-1]["id"] if self._env._simulator.checkpoints else None
+            return Action(
+                action_type=action_type,
+                checkpoint_id=checkpoint_id,
+                justification=f"RL agent selected action {action_idx}",
+            )
+        elif 4 <= action_idx <= 9:
+            action_type = CodeOrganismActionType.PATCH_FILE
+            path = target_path
+            diff = "retunr|return" if action_idx % 2 == 0 else "deaf |def "
+        elif action_idx == 10:
+            action_type = CodeOrganismActionType.QUARANTINE
+            return Action(
+                action_type=action_type,
+                module=target_path,
+                justification=f"RL agent selected action {action_idx}",
+            )
+        elif action_idx == 11:
+            action_type = CodeOrganismActionType.SPAWN_SUBAGENT
+            task = f"Fix {target_path}" if target_path else "Clean codebase"
+
+        return Action(
+            action_type=action_type,
+            path=path,
+            diff=diff,
+            task=task,
+            query="How to fix the failing tests?" if action_type == CodeOrganismActionType.REQUEST_EXPERT else None,
+            justification=f"RL agent selected action {action_idx}",
         )
 
     def render(self):

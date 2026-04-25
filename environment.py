@@ -186,97 +186,14 @@ class CodeOrganismEnv:
         self._action_count += 1
         self._prev_vitality = self._vitality
         step_watchdog_flags: List[str] = []
-        watchdog_penalty = 0.0
-
-        # ────────────────────────────────────────────────────────────────────
-        # 1. WATCHDOG — validate action before execution (spec §6.2)
-        # ────────────────────────────────────────────────────────────────────
-        wp, wf = self._watchdog_check(action)
-        watchdog_penalty += wp
-        step_watchdog_flags.extend(wf)
-
-        # ────────────────────────────────────────────────────────────────────
-        # 2. Deduct vitality cost
-        # ────────────────────────────────────────────────────────────────────
-        cost = VITALITY_COSTS.get(action.action_type, 1.0)
-        self._vitality -= cost
-
-        # Quarantine overcorrection tax (spec §10)
-        excess_quarantines = max(0, len(self._simulator.quarantined_modules) - MAX_QUARANTINED_FREE)
-        if excess_quarantines > 0:
-            tax = excess_quarantines * 2.0
-            self._vitality -= tax
-            step_watchdog_flags.append(f"Overcorrection tax: −{tax} vitality for {excess_quarantines} excess quarantines")
-
-        # ────────────────────────────────────────────────────────────────────
-        # 3. Execute action
-        # ────────────────────────────────────────────────────────────────────
+        watchdog_penalty = self._apply_watchdog(action, step_watchdog_flags)
+        self._apply_action_costs(action, step_watchdog_flags)
         action_info = self._process_action(action)
         self._action_history.append(action.action_type.value)
-
-        # ────────────────────────────────────────────────────────────────────
-        # 4. Auto-checkpoint every 5 steps (spec §4.2)
-        # ────────────────────────────────────────────────────────────────────
-        if self._step % AUTO_CHECKPOINT_INTERVAL == 0:
-            self._simulator.create_checkpoint(self._vitality, self._step)
-
-        # ────────────────────────────────────────────────────────────────────
-        # 5. FAULT INJECTOR — periodic (spec §4.3)
-        # ────────────────────────────────────────────────────────────────────
-        self._step_alerts = [] # clear step alerts
-        if self._step > 0 and self._step % self._fault_interval == 0:
-            if self._phase_num == 3:
-                fault = self._simulator.inject_targeted_fault(self._step)
-                if fault:
-                    self._step_alerts.append(f"🚨 NEUROTOXIN DETECTED: Adversarial mutation targeting {fault.target}")
-            else:
-                self._simulator.inject_fault(self._step, self._phase_num)
-            self._vitality -= 5.0
-
-        # ────────────────────────────────────────────────────────────────────
-        # 6. Evaluate — run tests, compute vitality delta
-        # ────────────────────────────────────────────────────────────────────
-        current_tests = self._simulator.run_all_tests()
-        num_passing = sum(1 for t in current_tests if t.status == "PASS")
-        total_tests = max(1, len(current_tests))
-
-        # Metabolic recovery: vitality gain from passing tests
-        pass_ratio = num_passing / total_tests
-        vitality_gain = pass_ratio * 3.0
-        self._vitality = min(100.0, max(0.0, self._vitality + vitality_gain))
-
-        # Compute test deltas
-        prev_map = {t.name: t.status for t in self._last_test_results}
-        for t in current_tests:
-            prev = prev_map.get(t.name, "PASS")
-            if prev != "PASS" and t.status == "PASS":
-                t.delta = 1
-            elif prev == "PASS" and t.status != "PASS":
-                t.delta = -1
-            else:
-                t.delta = 0
-
-        # Thriving streak (spec §4.6)
-        if num_passing == total_tests:
-            self._thriving_streak += 1
-        else:
-            self._thriving_streak = 0
-
-        # ────────────────────────────────────────────────────────────────────
-        # 7. Check termination (spec §4.6)
-        # ────────────────────────────────────────────────────────────────────
-        if self._vitality <= 0:
-            self._vitality = 0
-            self._done = True
-            info = {"termination": "organism_death"}
-        elif self._thriving_streak >= 3 and self._vitality > 80:
-            self._done = True
-            info = {"termination": "organism_thrival"}
-        elif self._step >= self._max_steps:
-            self._done = True
-            info = {"termination": "timeout_death"}
-        else:
-            info = {}
+        self._maybe_checkpoint()
+        self._maybe_inject_periodic_fault()
+        current_tests, num_passing, total_tests = self._evaluate_system_state()
+        info = self._compute_termination_info(num_passing, total_tests)
 
         # ────────────────────────────────────────────────────────────────────
         # 8. Compute reward R1–R5 (spec §6)
@@ -323,6 +240,80 @@ class CodeOrganismEnv:
             },
         )
 
+    def _apply_watchdog(self, action: Action, step_watchdog_flags: List[str]) -> float:
+        watchdog_penalty, flags = self._watchdog_check(action)
+        step_watchdog_flags.extend(flags)
+        return watchdog_penalty
+
+    def _apply_action_costs(self, action: Action, step_watchdog_flags: List[str]) -> None:
+        self._vitality -= VITALITY_COSTS.get(action.action_type, 1.0)
+        excess_quarantines = max(0, len(self._simulator.quarantined_modules) - MAX_QUARANTINED_FREE)
+        if excess_quarantines <= 0:
+            return
+        tax = excess_quarantines * 2.0
+        self._vitality -= tax
+        step_watchdog_flags.append(f"Overcorrection tax: −{tax} vitality for {excess_quarantines} excess quarantines")
+
+    def _maybe_checkpoint(self) -> None:
+        if self._step % AUTO_CHECKPOINT_INTERVAL == 0:
+            self._simulator.create_checkpoint(self._vitality, self._step)
+
+    def _maybe_inject_periodic_fault(self) -> None:
+        self._step_alerts = []
+        if self._step <= 0 or self._step % self._fault_interval != 0:
+            return
+        if self._phase_num == 3:
+            fault = self._simulator.inject_targeted_fault(self._step)
+            if fault:
+                self._step_alerts.append(f"🚨 NEUROTOXIN DETECTED: Adversarial mutation targeting {fault.target}")
+        else:
+            self._simulator.inject_fault(self._step, self._phase_num)
+        self._vitality -= 5.0
+
+    def _evaluate_system_state(self) -> tuple[List[TestResult], int, int]:
+        current_tests = self._simulator.run_all_tests()
+        num_passing = sum(1 for t in current_tests if t.status == "PASS")
+        total_tests = max(1, len(current_tests))
+        self._apply_metabolic_recovery(num_passing, total_tests)
+        self._compute_test_deltas(current_tests)
+        self._update_thriving_streak(num_passing, total_tests)
+        return current_tests, num_passing, total_tests
+
+    def _apply_metabolic_recovery(self, num_passing: int, total_tests: int) -> None:
+        pass_ratio = num_passing / total_tests
+        vitality_gain = pass_ratio * 3.0
+        self._vitality = min(100.0, max(0.0, self._vitality + vitality_gain))
+
+    def _compute_test_deltas(self, current_tests: List[TestResult]) -> None:
+        prev_map = {t.name: t.status for t in self._last_test_results}
+        for test in current_tests:
+            prev = prev_map.get(test.name, "PASS")
+            if prev != "PASS" and test.status == "PASS":
+                test.delta = 1
+            elif prev == "PASS" and test.status != "PASS":
+                test.delta = -1
+            else:
+                test.delta = 0
+
+    def _update_thriving_streak(self, num_passing: int, total_tests: int) -> None:
+        if num_passing == total_tests:
+            self._thriving_streak += 1
+            return
+        self._thriving_streak = 0
+
+    def _compute_termination_info(self, num_passing: int, total_tests: int) -> Dict[str, str]:
+        if self._vitality <= 0:
+            self._vitality = 0
+            self._done = True
+            return {"termination": "organism_death"}
+        if self._thriving_streak >= 3 and self._vitality > 80:
+            self._done = True
+            return {"termination": "organism_thrival"}
+        if self._step >= self._max_steps:
+            self._done = True
+            return {"termination": "timeout_death"}
+        return {}
+
     def state(self) -> EnvState:
         """Current lifecycle state."""
         current_tests = self._simulator.run_all_tests() if self._simulator else []
@@ -361,66 +352,71 @@ class CodeOrganismEnv:
     # ── Action Handlers ────────────────────────────────────────────────────
 
     def _process_action(self, action: Action) -> dict:
-        at = action.action_type
-        sim = self._simulator
+        handler_map = {
+            CodeOrganismActionType.PATCH_FILE: self._handle_patch_file_action,
+            CodeOrganismActionType.RUN_TESTS: self._handle_run_tests_action,
+            CodeOrganismActionType.ROLLBACK: self._handle_rollback_action,
+            CodeOrganismActionType.SPAWN_SUBAGENT: self._handle_subagent,
+            CodeOrganismActionType.QUARANTINE: self._handle_quarantine_action,
+            CodeOrganismActionType.REQUEST_EXPERT: self._handle_expert,
+            CodeOrganismActionType.EMIT_SIGNAL: self._handle_emit_signal_action,
+            CodeOrganismActionType.DO_NOTHING: self._handle_do_nothing_action,
+        }
+        handler = handler_map.get(action.action_type)
+        if handler is None:
+            return {"result": "unknown_action"}
+        return handler(action)
 
-        if at == CodeOrganismActionType.PATCH_FILE:
-            if not action.path or not action.diff:
-                return {"result": "error", "message": "path and diff required."}
-            if is_protected_path(action.path):
-                return {"result": "blocked", "message": "Watchdog: protected path."}
-            ok = sim.apply_patch(action.path, action.diff, self._step)
-            return {"result": "success" if ok else "failure", "path": action.path}
+    def _handle_patch_file_action(self, action: Action) -> dict:
+        if not action.path or not action.diff:
+            return {"result": "error", "message": "path and diff required."}
+        if is_protected_path(action.path):
+            return {"result": "blocked", "message": "Watchdog: protected path."}
+        ok = self._simulator.apply_patch(action.path, action.diff, self._step)
+        return {"result": "success" if ok else "failure", "path": action.path}
 
-        elif at == CodeOrganismActionType.RUN_TESTS:
-            results = sim.run_all_tests()
-            passing = sum(1 for t in results if t.status == "PASS")
-            return {"result": "success", "tests_passing": passing, "tests_total": len(results)}
+    def _handle_run_tests_action(self, _action: Action) -> dict:
+        results = self._simulator.run_all_tests()
+        passing = sum(1 for t in results if t.status == "PASS")
+        return {"result": "success", "tests_passing": passing, "tests_total": len(results)}
 
-        elif at == CodeOrganismActionType.ROLLBACK:
-            if not action.checkpoint_id:
-                return {"result": "error", "message": "checkpoint_id required."}
-            ok, msg = sim.rollback(action.checkpoint_id)
-            if ok:
-                # Rollback also restores some vitality sanity
-                for cp in sim.checkpoints:
-                    if cp["id"] == action.checkpoint_id:
-                        saved_v = cp["state"].get("vitality", self._vitality)
-                        # Don't fully restore — just partial blend
-                        self._vitality = min(100.0, (self._vitality + saved_v) / 2)
-                        break
-            return {"result": "success" if ok else "failure", "message": msg}
+    def _handle_rollback_action(self, action: Action) -> dict:
+        if not action.checkpoint_id:
+            return {"result": "error", "message": "checkpoint_id required."}
+        ok, msg = self._simulator.rollback(action.checkpoint_id)
+        if ok:
+            self._restore_vitality_from_checkpoint(action.checkpoint_id)
+        return {"result": "success" if ok else "failure", "message": msg}
 
-        elif at == CodeOrganismActionType.SPAWN_SUBAGENT:
-            return self._handle_subagent(action)
+    def _restore_vitality_from_checkpoint(self, checkpoint_id: str) -> None:
+        for checkpoint in self._simulator.checkpoints:
+            if checkpoint["id"] != checkpoint_id:
+                continue
+            saved_vitality = checkpoint["state"].get("vitality", self._vitality)
+            self._vitality = min(100.0, (self._vitality + saved_vitality) / 2)
+            return
 
-        elif at == CodeOrganismActionType.QUARANTINE:
-            module = action.module or ""
-            if not module:
-                return {"result": "error", "message": "module required."}
-            info = sim.quarantine_module(module)
-            return {"result": "success", **info}
+    def _handle_quarantine_action(self, action: Action) -> dict:
+        module = action.module or ""
+        if not module:
+            return {"result": "error", "message": "module required."}
+        info = self._simulator.quarantine_module(module)
+        return {"result": "success", **info}
 
-        elif at == CodeOrganismActionType.REQUEST_EXPERT:
-            return self._handle_expert(action)
+    def _handle_emit_signal_action(self, action: Action) -> dict:
+        signal = {
+            "type": action.signal_type or "generic",
+            "data": action.signal_data or {},
+            "step": self._step,
+        }
+        if signal["type"] == "INTENT_PATCH" and "target" in signal["data"]:
+            self._active_intent = signal["data"]["target"]
+        self._signals_log.append(signal)
+        return {"result": "signal_emitted", "signal": signal}
 
-        elif at == CodeOrganismActionType.EMIT_SIGNAL:
-            sig = {
-                "type": action.signal_type or "generic",
-                "data": action.signal_data or {},
-                "step": self._step,
-            }
-            # Hackathon Multi-Agent Teaming: Intent signaling
-            if sig["type"] == "INTENT_PATCH" and "target" in sig["data"]:
-                self._active_intent = sig["data"]["target"]
-
-            self._signals_log.append(sig)
-            return {"result": "signal_emitted", "signal": sig}
-
-        elif at == CodeOrganismActionType.DO_NOTHING:
-            return {"result": "idle", "message": "Organism metabolizing."}
-
-        return {"result": "unknown_action"}
+    @staticmethod
+    def _handle_do_nothing_action(_action: Action) -> dict:
+        return {"result": "idle", "message": "Organism metabolizing."}
 
     def _handle_subagent(self, action: Action) -> dict:
         """Subagent simulation (spec §9.6)."""
