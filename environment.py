@@ -11,11 +11,15 @@ self-corrupting codebase. Features:
   - Quarantine mechanics with overcorrection tax
   - Rollback loop protection (3 per checkpoint)
   - Thrival: all_pass for 3 consecutive steps AND vitality > 80
+  - World Modeling: dependency_graph in observations
+  - Multi-Agent Teaming: Functional signaling with coordination bonuses
 """
 
 from __future__ import annotations
 
+import json
 import math
+import os
 import uuid
 import random
 from typing import Optional, Dict, List, Any
@@ -34,6 +38,14 @@ from models import (
 )
 from data import CodebaseSimulator, get_curriculum_seed, is_protected_path
 
+# ── Held-out Seed Registry (spec §6, §7.3) ──────────────────────────────────
+
+HELD_OUT_SEEDS = set()
+try:
+    with open(os.path.join(os.path.dirname(__file__), "evaluation", "held_out_seeds.json")) as f:
+        HELD_OUT_SEEDS = set(json.load(f))
+except (FileNotFoundError, json.JSONDecodeError):
+    pass
 
 # ── Vitality Costs (spec §4.2 — exact values) ─────────────────────────────────
 
@@ -58,7 +70,7 @@ PHASE_CONFIG = {
 
 # ── Watchdog penalties (spec §6.2) ─────────────────────────────────────────────
 
-WATCHDOG_PROTECTED_FILE_PENALTY = -5.0
+WATCHDOG_PROTECTED_FILE_PENALTY = -10.0
 WATCHDOG_ENV_SCOPE_PENALTY = -3.0
 WATCHDOG_BAD_TOOL_PENALTY = -10.0
 WATCHDOG_ESCAPE_PENALTY = -15.0
@@ -91,6 +103,10 @@ class CodeOrganismEnv:
         self._watchdog_violations: int = 0
         self._pending_subagent_results: List[SubagentResult] = []
         self._signals_log: List[Dict[str, Any]] = []
+        
+        # Hackathon Teaming & World Modeling (Functional additions)
+        self._active_intent: Optional[str] = None
+        self._step_alerts: List[str] = []
 
     # ── OpenEnv API ────────────────────────────────────────────────────────
 
@@ -123,6 +139,10 @@ class CodeOrganismEnv:
         self._watchdog_violations = 0
         self._pending_subagent_results = []
         self._signals_log = []
+        
+        # Reset teaming state
+        self._active_intent = None
+        self._step_alerts = []
 
         # Auto-checkpoint at step 0
         self._simulator.create_checkpoint(self._vitality, 0)
@@ -178,9 +198,12 @@ class CodeOrganismEnv:
         # ────────────────────────────────────────────────────────────────────
         # 5. FAULT INJECTOR — periodic (spec §4.3)
         # ────────────────────────────────────────────────────────────────────
+        self._step_alerts = [] # clear step alerts
         if self._step > 0 and self._step % self._fault_interval == 0:
             if self._phase_num == 3:
-                self._simulator.inject_targeted_fault(self._step)
+                fault = self._simulator.inject_targeted_fault(self._step)
+                if fault:
+                    self._step_alerts.append(f"🚨 NEUROTOXIN DETECTED: Adversarial mutation targeting {fault.target}")
             else:
                 self._simulator.inject_fault(self._step, self._phase_num)
             self._vitality -= 5.0
@@ -338,6 +361,10 @@ class CodeOrganismEnv:
                 "data": action.signal_data or {},
                 "step": self._step,
             }
+            # Hackathon Multi-Agent Teaming: Intent signaling
+            if sig["type"] == "INTENT_PATCH" and "target" in sig["data"]:
+                self._active_intent = sig["data"]["target"]
+
             self._signals_log.append(sig)
             return {"result": "signal_emitted", "signal": sig}
 
@@ -350,6 +377,32 @@ class CodeOrganismEnv:
         """Subagent simulation (spec §9.6)."""
         task_desc = action.task or "generic repair"
         sim = self._simulator
+
+        # Spec §10 Edge Case: Subagent recursion
+        if "spawn" in task_desc.lower() or "delegate" in task_desc.lower():
+            result = SubagentResult(
+                task=task_desc,
+                success=False,
+                actions_taken=1,
+                tests_fixed=0,
+                vitality_delta=-1.0,
+                detail="Error: Subagent nesting depth exceeded (max=1). Subagent terminated.",
+            )
+            self._pending_subagent_results.append(result)
+            return {"result": "subagent_complete", "success": False, "necessary_delegation": False, "detail": result.detail}
+
+        # Spec §10 Edge Case: OOM in subagent sandbox
+        if random.random() < 0.05:
+            result = SubagentResult(
+                task=task_desc,
+                success=False,
+                actions_taken=random.randint(1, 5),
+                tests_fixed=0,
+                vitality_delta=-1.0,
+                detail="SUBAGENT_OOM: Subagent exceeded 512MB memory cap.",
+            )
+            self._pending_subagent_results.append(result)
+            return {"result": "subagent_complete", "success": False, "necessary_delegation": True, "detail": result.detail}
 
         # Subagent attempts to fix one fault
         success = False
@@ -436,7 +489,7 @@ class CodeOrganismEnv:
         if len(self._action_history) >= 2 and self._action_history[-1] == self._action_history[-2]:
             r3 -= 0.3
 
-        # R4: Subagent coordination
+        # R4: Subagent coordination & Intent signaling (Teaming Bonus)
         r4 = 0.0
         if action.action_type == CodeOrganismActionType.SPAWN_SUBAGENT:
             if self._pending_subagent_results:
@@ -445,11 +498,19 @@ class CodeOrganismEnv:
                     r4 = 2.0   # Spec: +2.0 for correct delegation
                 else:
                     r4 = -1.0  # Spec: −1.0 for unnecessary/failed
+        elif action.action_type == CodeOrganismActionType.PATCH_FILE:
+            # Teaming Bonus: Did they signal intent before acting?
+            if self._active_intent == action.path:
+                r4 += 0.5  # Bonus for planning and communicating before executing
+                self._active_intent = None # consume intent
 
         # R5: Generalization bonus (end-of-episode, held-out seeds)
         r5 = 0.0
         if self._done and self._vitality > 0:
-            r5 = 0.5  # Provisional — full implementation needs held-out seed registry
+            if self._simulator and self._simulator.seed in HELD_OUT_SEEDS:
+                r5 = 0.5  # Bonus for surviving a held-out seed
+            elif self._phase_num == 3:
+                r5 = 0.2  # Base generalization for phase 3
 
         # Weighted total (spec §6)
         total = (
@@ -509,6 +570,8 @@ class CodeOrganismEnv:
             subagent_results=self._pending_subagent_results[-3:],
             recent_signals=self._signals_log[-5:],
             watchdog_flags=self._watchdog_flags,
+            dependency_graph=sim.get_dependency_graph(),
+            alerts=self._step_alerts,
         )
 
 

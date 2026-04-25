@@ -111,6 +111,9 @@ class Observation(BaseModel):
     # Security / policy
     watchdog_flags: List[str] = Field(default_factory=list)
 
+    # World Model (Dependency Graph)
+    dependency_graph: Dict[str, List[str]] = Field(default_factory=dict)
+
     # Alerts (non-fault system hints)
     alerts: List[str] = Field(default_factory=list)
 
