@@ -49,6 +49,10 @@ jobs:
             --exclude 'trainingthings.pdf' \
             --exclude 'trainingthings_images/' \
             --exclude '*.ipynb' \
+            --exclude '*.pdf' \
+            --exclude '*.docx' \
+            --exclude '*.pptx' \
+            --exclude '*.xlsx' \
             "${GITHUB_WORKSPACE}/" /tmp/hf-space-src/
           cp "${GITHUB_WORKSPACE}/.github/hf-space/README.md" /tmp/hf-space-src/README.md
 
