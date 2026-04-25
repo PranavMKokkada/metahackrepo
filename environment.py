@@ -110,6 +110,7 @@ class CodeOrganismEnv:
         self._total_downtime_saved: float = 0.0 # in seconds
         self._last_action_confidence: float = 0.0
         self._last_action_risk: str = "Low"
+        self._scorer = SRERubricScorer()
 
     # ── OpenEnv API ────────────────────────────────────────────────────────
 
@@ -293,8 +294,12 @@ class CodeOrganismEnv:
             self._step_alerts.append(f"✅ SRE IMPACT: Autonomous remediation saved {saving}s of system downtime.")
 
         # SRE Explainability Simulation
-        self._last_action_confidence = 0.8 + (random.random() * 0.15) if breakdown.total > 0 else 0.4 + (random.random() * 0.3)
-        self._last_action_risk = "Low" if self._last_action_confidence > 0.8 else "Medium" if self._last_action_confidence > 0.6 else "High"
+        self._last_action_confidence = (
+            0.8 + (random.random() * 0.15)
+            if breakdown.total > 0
+            else 0.4 + (random.random() * 0.3)
+        )
+        self._last_action_risk = self._risk_from_confidence(self._last_action_confidence)
 
         # Record watchdog flags
         self._watchdog_flags = step_watchdog_flags
@@ -569,6 +574,14 @@ class CodeOrganismEnv:
             dependency_graph=sim.get_dependency_graph(),
             alerts=self._step_alerts,
         )
+
+    @staticmethod
+    def _risk_from_confidence(confidence: float) -> str:
+        if confidence > 0.8:
+            return "Low"
+        if confidence > 0.6:
+            return "Medium"
+        return "High"
 
 
 # ── Session management ─────────────────────────────────────────────────────────

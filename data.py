@@ -17,6 +17,7 @@ import os
 import tempfile
 import subprocess
 import json
+import stat
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Set
 
@@ -58,7 +59,7 @@ HELD_OUT_SEEDS = set()
 try:
     with open(os.path.join(os.path.dirname(__file__), "evaluation", "held_out_seeds.json")) as f:
         HELD_OUT_SEEDS = set(json.load(f))
-except (FileNotFoundError, json.JSONDecodeError, Exception):
+except (FileNotFoundError, json.JSONDecodeError):
     pass
 
 
@@ -580,8 +581,9 @@ except Exception as e:
                 
                 # Simulate OverlayFS read-only mount
                 try:
-                    os.chmod(test_path, 0o444) # Read-only
-                except:
+                    os.chmod(test_path, stat.S_IREAD)
+                except OSError:
+                    # Best effort on platforms/filesystems that don't fully support chmod semantics.
                     pass
                 test_file_paths.append((name, test_path, target_file))
 
@@ -704,20 +706,21 @@ except Exception as e:
             deps = []
             # Simple line-based parser for imports
             for line in content.split("\n"):
-                line = line.strip()
-                if line.startswith("import src."):
-                    # import src.utils -> src/utils.py
-                    mod = line.split(" ")[1].replace(".", "/") + ".py"
-                    if mod in self.files: deps.append(mod)
-                elif line.startswith("from src."):
-                    # from src.auth import ... -> src/auth.py
-                    mod = line.split(" ")[1].replace(".", "/") + ".py"
-                    if mod in self.files: deps.append(mod)
-                elif "from ." in line:
-                    # Relative imports (not common in our templates but safe to handle)
-                    pass
+                mod = self._extract_dependency_path(line.strip())
+                if mod and mod in self.files:
+                    deps.append(mod)
             graph[path] = deps
         return graph
+
+    @staticmethod
+    def _extract_dependency_path(line: str) -> Optional[str]:
+        if line.startswith("import src."):
+            module_name = line.split(" ", 1)[1]
+            return module_name.replace(".", "/") + ".py"
+        if line.startswith("from src."):
+            module_name = line.split(" ", 1)[1]
+            return module_name.replace(".", "/") + ".py"
+        return None
 
     def evaluate_patch_quality(self, path: str, diff: str) -> Dict[str, Any]:
         """Snorkel AI simulated expert: blind quality assessment using LLM."""
@@ -728,71 +731,72 @@ except Exception as e:
             return {"quality_score": 0.0, "patch_valid": False, "feedback": "Invalid target.", "issues_found": issues}
 
         content = self.files[path]
-        original_code = self._original_test_codes.get(path, content) # use original logic
-        
-        # Check if OpenAI is available for real expert
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if api_key:
-            try:
-                import openai
-                client = openai.OpenAI(api_key=api_key)
-                prompt = f"""
-                You are an expert code reviewer evaluating a patch for CodeOrganismVM.
-                File: {path}
-                Current Corrupted Content:
-                {content}
-                
-                Patch Diff/Content applied:
-                {diff}
-                
-                Does this patch fix the corruption and restore the code to a working state?
-                Respond strictly in JSON: {{"quality_score": float 0.0-1.0, "patch_valid": bool, "feedback": "string", "issues_found": ["issue1"]}}
-                """
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[{"role": "system", "content": "You are a Snorkel AI expert validator."},
-                              {"role": "user", "content": prompt}],
-                    response_format={"type": "json_object"}
-                )
-                import json
-                result = json.loads(response.choices[0].message.content)
-                return result
-            except Exception as e:
-                issues.append(f"LLM Expert failed: {str(e)}. Falling back to heuristic.")
-        
-        # Fallback Heuristic
-        quality = 0.0
-        patch_valid = False
-        
-        if "|" in diff:
-            old, new = diff.split("|", 1)
-            if old in content:
-                corruption_markers = ["retunr", "improt ", "nonexistent_module", "deaf ", "off_by_one", "RACE_CONDITION"]
-                fixes_corruption = any(m in old for m in corruption_markers)
-                if fixes_corruption:
-                    quality = 0.7 + self.rng.uniform(0, 0.3)
-                    patch_valid = True
-                    feedback = "The patch addresses known corruption markers."
-                else:
-                    quality = 0.3
-                    feedback = "The patch modifies code but doesn't seem to target the primary fault."
-            else:
-                feedback = "The diff target was not found in the file."
-        else:
-            # Full replacement fallback check
-            if "import " in diff and "def " in diff:
-                quality = 0.6
-                patch_valid = True
-                feedback = "Heuristic accepted full replacement."
-            else:
-                feedback = "Diff format not recognized and full replacement lacks expected structure."
+        llm_result = self._evaluate_patch_quality_with_llm(path, content, diff)
+        if llm_result is not None:
+            return llm_result
+        issues.append("LLM expert unavailable or failed. Falling back to heuristic.")
 
+        quality, patch_valid, feedback = self._evaluate_patch_quality_heuristic(content, diff)
         return {
             "quality_score": round(quality, 2),
             "patch_valid": patch_valid,
             "feedback": feedback,
             "issues_found": issues
         }
+
+    def _evaluate_patch_quality_with_llm(self, path: str, content: str, diff: str) -> Optional[Dict[str, Any]]:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            return None
+
+        try:
+            import openai
+            from openai import OpenAIError
+
+            client = openai.OpenAI(api_key=api_key)
+            prompt = f"""
+            You are an expert code reviewer evaluating a patch for CodeOrganismVM.
+            File: {path}
+            Current Corrupted Content:
+            {content}
+            
+            Patch Diff/Content applied:
+            {diff}
+            
+            Does this patch fix the corruption and restore the code to a working state?
+            Respond strictly in JSON: {{"quality_score": float 0.0-1.0, "patch_valid": bool, "feedback": "string", "issues_found": ["issue1"]}}
+            """
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a Snorkel AI expert validator."},
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+            )
+            return json.loads(response.choices[0].message.content)
+        except (ImportError, OpenAIError, ValueError, KeyError, TypeError):
+            return None
+
+    def _evaluate_patch_quality_heuristic(self, content: str, diff: str) -> tuple[float, bool, str]:
+        quality = 0.0
+        patch_valid = False
+
+        if "|" in diff:
+            old, _new = diff.split("|", 1)
+            if old in content:
+                corruption_markers = ["retunr", "improt ", "nonexistent_module", "deaf ", "off_by_one", "RACE_CONDITION"]
+                if any(marker in old for marker in corruption_markers):
+                    return 0.7 + self.rng.uniform(0, 0.3), True, "The patch addresses known corruption markers."
+                return 0.3, False, "The patch modifies code but doesn't seem to target the primary fault."
+            return 0.0, False, "The diff target was not found in the file."
+
+        if "import " in diff and "def " in diff:
+            quality = 0.6
+            patch_valid = True
+            return quality, patch_valid, "Heuristic accepted full replacement."
+
+        return quality, patch_valid, "Diff format not recognized and full replacement lacks expected structure."
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

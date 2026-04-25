@@ -108,7 +108,7 @@ def create_gradio_app() -> gr.Blocks:
         '''
 
     def format_impact_html(downtime: float, confidence: float, risk: str) -> str:
-        risk_color = "#10b981" if risk == "Low" else "#f59e0b" if risk == "Medium" else "#f43f5e"
+        risk_color = _risk_color(risk)
         conf_color = "#10b981" if confidence > 0.8 else "#f59e0b"
         
         return f'''
@@ -127,6 +127,13 @@ def create_gradio_app() -> gr.Blocks:
             </div>
         </div>
         '''
+
+    def _risk_color(risk: str) -> str:
+        if risk == "Low":
+            return "#10b981"
+        if risk == "Medium":
+            return "#f59e0b"
+        return "#f43f5e"
 
     # ── Callbacks ─────────────────────────────────────────────────────────────
 
