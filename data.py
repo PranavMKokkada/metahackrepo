@@ -16,7 +16,7 @@ import random
 import os
 import json
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Any, Set, Callable
+from typing import Dict, List, Optional, Any, Set
 
 from models import FileEntry, TestResult
 

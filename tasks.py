@@ -9,7 +9,7 @@ Three phases of increasing hostility:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Any
+from typing import Dict, List
 
 from models import Action
 from environment import CodeOrganismEnv

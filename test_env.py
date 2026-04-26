@@ -10,13 +10,11 @@ from __future__ import annotations
 import pytest
 from models import (
     Action, CodeOrganismActionType, Observation, RewardBreakdown,
-    StepResult, EnvState, FileEntry, TestResult, Checkpoint,
-    SubagentResult, ExpertResponse,
+    EnvState, FileEntry, TestResult, SubagentResult, ExpertResponse,
 )
-from data import CodebaseSimulator, is_protected_path, PHASE_1_FAULTS, PHASE_2_FAULTS, PHASE_3_FAULTS
+from data import CodebaseSimulator, is_protected_path
 from environment import (
     CodeOrganismEnv, SessionManager, VITALITY_COSTS,
-    PHASE_CONFIG, AUTO_CHECKPOINT_INTERVAL,
 )
 from tasks import TASK_DEFINITIONS, run_grader
 

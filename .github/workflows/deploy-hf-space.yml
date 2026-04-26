@@ -23,7 +23,8 @@ jobs:
       contents: read
     env:
       HF_SPACE_REPO: ${{ vars.HF_SPACE_REPO }}
-      HF_SPACE_BRANCH: ${{ vars.HF_SPACE_BRANCH || 'main' }}
+      # Optional; when empty the sync step defaults to `main` (shell ${VAR:-main}).
+      HF_SPACE_BRANCH: ${{ vars.HF_SPACE_BRANCH }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
       - name: Checkout repository
@@ -81,9 +82,12 @@ jobs:
       - name: Sync files to Hugging Face Space
         run: |
           set -euo pipefail
+          BRANCH="${HF_SPACE_BRANCH:-main}"
+          echo "Using branch: ${BRANCH}"
           git clone "https://oauth2:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_REPO}" /tmp/hf-space-repo
           cd /tmp/hf-space-repo
-          git checkout "${HF_SPACE_BRANCH}" || git checkout -b "${HF_SPACE_BRANCH}"
+          git fetch origin "${BRANCH}" 2>/dev/null || true
+          git checkout "${BRANCH}" 2>/dev/null || git checkout -b "${BRANCH}"
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
           cp -a /tmp/hf-space-src/. .
           git add -A
@@ -94,4 +98,4 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git commit -m "Sync from GitHub: ${GITHUB_SHA}"
-          git push origin "${HF_SPACE_BRANCH}"
+          git push -u origin "${BRANCH}"

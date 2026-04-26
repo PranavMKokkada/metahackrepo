@@ -10,7 +10,6 @@ Matches the complete spec (Section 4.1, 4.2, 4.5, 6):
 
 from __future__ import annotations
 
-import hashlib
 from enum import Enum
 from typing import Optional, Dict, List, Any
 

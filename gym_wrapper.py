@@ -6,7 +6,7 @@ Flattens the observation into a vector and provides a discrete action space.
 
 from __future__ import annotations
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, Any
 import numpy as np
 
 try:
@@ -63,17 +63,23 @@ class CodeOrganismGymEnv(gym.Env):
         idx = 0
         
         # Scalars
-        vec[idx] = obs.vitality_score; idx += 1
-        vec[idx] = obs.timestep / max(obs.max_steps, 1); idx += 1
-        vec[idx] = len(obs.file_tree); idx += 1
-        
+        vec[idx] = obs.vitality_score
+        idx += 1
+        vec[idx] = obs.timestep / max(obs.max_steps, 1)
+        idx += 1
+        vec[idx] = len(obs.file_tree)
+        idx += 1
+
         failing = [t for t in obs.test_results if t.status != "PASS"]
-        vec[idx] = len(failing); idx += 1
-        
-        quarantined = [f for f in obs.file_tree if getattr(f, 'is_quarantined', False)]
-        vec[idx] = len(quarantined); idx += 1
-        
-        vec[idx] = len(obs.active_checkpoints); idx += 1
+        vec[idx] = len(failing)
+        idx += 1
+
+        quarantined = [f for f in obs.file_tree if getattr(f, "is_quarantined", False)]
+        vec[idx] = len(quarantined)
+        idx += 1
+
+        vec[idx] = len(obs.active_checkpoints)
+        idx += 1
         
         # Test results (first 32)
         for i, t in enumerate(obs.test_results[:32]):

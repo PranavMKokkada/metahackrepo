@@ -6,7 +6,7 @@ Implements the R1–R5 SRE Rubric as per judging criteria.
 from __future__ import annotations
 
 import math
-from typing import List, Dict, Any
+from typing import List
 from models import TestResult, Action, CodeOrganismActionType, RewardBreakdown
 
 class SRERubricScorer:

@@ -17,8 +17,6 @@ self-corrupting codebase. Features:
 
 from __future__ import annotations
 
-import json
-import math
 import os
 import time
 import uuid
@@ -29,7 +27,9 @@ from typing import Optional, Dict, List, Any
 try:
     from openenv_core import Environment
 except ImportError:
-    class Environment: pass
+
+    class Environment:
+        pass
 
 from models import (
     Action,
@@ -41,7 +41,6 @@ from models import (
     TestResult,
     Checkpoint,
     SubagentResult,
-    ExpertResponse,
 )
 from data import CodebaseSimulator, get_curriculum_seed, is_protected_path, HELD_OUT_SEEDS
 from rubrics import SRERubricScorer
