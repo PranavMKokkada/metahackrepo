@@ -65,6 +65,10 @@ jobs:
           mkdir -p "${DST}/training"
           install -m0644 "${SRC}/training/rollout.py" "${DST}/training/rollout.py"
 
+          cp -a "${SRC}/sre_platform" "${DST}/sre_platform"
+          mkdir -p "${DST}/static/console"
+          cp -a "${SRC}/static/console/." "${DST}/static/console/"
+
           cp -a "${SRC}/evaluation" "${DST}/evaluation"
           cp -a "${SRC}/project_skills" "${DST}/project_skills"
 

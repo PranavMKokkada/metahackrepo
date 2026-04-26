@@ -10,11 +10,16 @@ from typing import Optional, List, Deque, Dict
 
 from fastapi import Depends, FastAPI, HTTPException, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from models import Action, CodeOrganismActionType, Observation, StepResult, EnvState
 from environment import SessionManager
 from tasks import TASK_DEFINITIONS, run_grader
+
+from sre_platform import services as sre_services
+from sre_platform.routes import apply_production_or_guardrails_step, build_platform_router
+from sre_platform.state import STORE
 
 # Gradio must stay available even if the UI module fails (e.g. missing optional paths in Docker).
 gr = None
@@ -70,10 +75,14 @@ app.add_middleware(
 # Session manager holds all environment instances
 sessions = SessionManager()
 
-# Mount the interactive UI when Gradio is installed.
+# Mount the interactive UI when Gradio is installed (may replace `app` reference).
 if gr is not None and create_gradio_app is not None:
     demo = create_gradio_app()
     app = gr.mount_gradio_app(app, demo, path="/ui")
+
+_console_dir = os.path.join(os.path.dirname(__file__), "static", "console")
+if os.path.isdir(_console_dir):
+    app.mount("/console", StaticFiles(directory=_console_dir, html=True), name="console")
 
 # ── Request / Response schemas ─────────────────────────────────────────────────
 
@@ -113,6 +122,9 @@ def _enforce_rate_limit(request: Request, api_key: str) -> None:
         raise HTTPException(status_code=429, detail="Rate limit exceeded.")
     bucket.append(now)
 
+
+app.include_router(build_platform_router(sessions.get, require_api_key))
+
 # ── Helper: resolve session from header ────────────────────────────────────────
 
 def _get_env(session_id: Optional[str] = None):
@@ -120,12 +132,47 @@ def _get_env(session_id: Optional[str] = None):
 
 # ── OpenEnv Standard Endpoints ─────────────────────────────────────────────────
 
+def _run_environment_step(action: Action, x_session_id: Optional[str] = None) -> StepResult:
+    env = _get_env(x_session_id)
+    blocked_or_pending, _ = apply_production_or_guardrails_step(env, action, x_session_id)
+    if blocked_or_pending is not None:
+        return blocked_or_pending
+    result = env.step(action)
+    st = STORE.get(x_session_id)
+    st.touch()
+    sre_services.record_evolution(st, env, action)
+    sre_services.advance_cicd_on_recovery(st, result.reward_breakdown.test_recovery > 0)
+    result.info["explanation"] = sre_services.explain_step(env, action, result)
+    preds = sre_services.predictive_scan(env)
+    st.last_predictions = preds
+    result.info["predictive_alerts"] = [
+        {"id": p.alert_id, "severity": p.severity, "pattern": p.pattern, "recommendation": p.recommendation}
+        for p in preds
+    ]
+    if action.action_type == CodeOrganismActionType.SPAWN_SUBAGENT:
+        result.info["specialized_agent"] = sre_services.specialized_subagent_detail(action.task)
+    if st.ingested_logs:
+        result.info["external_log_tail"] = st.ingested_logs[-12:]
+    sre_services.update_business_metrics(st, env, result)
+    if result.done:
+        sre_services.record_memory(
+            st,
+            env,
+            outcome=str(result.info.get("termination", "done")),
+            strategy=action.action_type.value,
+        )
+    return result
+
+
 @app.get("/")
 def root():
     return {
         "status": "ok",
         "environment": "autonomous-sre",
         "version": "1.0.0",
+        "console_ui": "/console/",
+        "legacy_gradio_ui": "/ui/",
+        "platform_api": "/platform/session/state",
     }
 
 @app.get("/health")
@@ -171,12 +218,13 @@ def reset(
     if actual_task_id not in TASK_DEFINITIONS:
         raise HTTPException(400, f"Unknown task_id: {actual_task_id}")
     env = _get_env(x_session_id)
-    return env.reset(actual_task_id)
+    obs = env.reset(actual_task_id)
+    sre_services.on_env_reset(STORE.get(x_session_id), env)
+    return obs
 
 @app.post("/step", response_model=StepResult)
 def step(action: Action, x_session_id: Optional[str] = Header(None), _auth: None = Depends(require_api_key)):
-    env = _get_env(x_session_id)
-    return env.step(action)
+    return _run_environment_step(action, x_session_id)
 
 @app.get("/state", response_model=EnvState)
 def state(x_session_id: Optional[str] = Header(None), _auth: None = Depends(require_api_key)):
@@ -233,7 +281,7 @@ def call_mcp_tool(tool_call: dict, x_session_id: Optional[str] = Header(None), _
     # Map MCP call to standard OpenEnv Action
     try:
         action = Action(action_type=CodeOrganismActionType(name), **args)
-        return env.step(action)
+        return _run_environment_step(action, x_session_id)
     except Exception as e:
         raise HTTPException(400, f"MCP Protocol Error: {e}")
 

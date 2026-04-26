@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Autonomous SRE — Operations Console</title>
+  <link rel="stylesheet" href="/console/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo"></span>
+      <div>
+        <div class="title">Autonomous SRE</div>
+        <div class="subtitle">Human-in-the-loop control plane</div>
+      </div>
+    </div>
+    <div class="auth">
+      <label>API key</label>
+      <input type="password" id="apiKey" placeholder="x-api-key" autocomplete="off" />
+      <button type="button" id="saveKey">Save</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="overview">Overview</button>
+    <button class="tab" data-tab="production">Production mode</button>
+    <button class="tab" data-tab="explain">Explainability</button>
+    <button class="tab" data-tab="guard">Guardrails</button>
+    <button class="tab" data-tab="cicd">CI/CD</button>
+    <button class="tab" data-tab="biz">Business</button>
+    <button class="tab" data-tab="memory">Memory</button>
+    <button class="tab" data-tab="predict">Predictive</button>
+    <button class="tab" data-tab="evo">Evolution</button>
+    <button class="tab" data-tab="agents">Agents</button>
+    <button class="tab" data-tab="logs">Logs</button>
+  </nav>
+
+  <main id="panels">
+    <section id="tab-overview" class="panel grid-2">
+      <div class="card">
+        <h2>Episode</h2>
+        <pre id="episodeBox" class="mono"></pre>
+        <div class="row">
+          <button id="btnReset">Reset phase_1</button>
+          <button id="btnRunTests">Run tests</button>
+          <button id="btnRefresh">Refresh platform</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Last step response</h2>
+        <pre id="lastStepBox" class="mono small"></pre>
+      </div>
+    </section>
+
+    <section id="tab-production" class="panel hidden">
+      <div class="card">
+        <h2>Production mode (suggest → rank → approve)</h2>
+        <label class="switch"><input type="checkbox" id="prodToggle" /> Enable production mode (PATCH_FILE queues for approval)</label>
+        <p class="hint">Submit a PATCH via API as usual; when enabled, the step returns ranked suggestions. Approve one below.</p>
+        <div id="suggestionsBox" class="suggestions"></div>
+        <div class="row" id="approveRow"></div>
+      </div>
+    </section>
+
+    <section id="tab-explain" class="panel hidden">
+      <div class="card"><h2>Last explainability</h2><pre id="explainBox" class="mono"></pre></div>
+    </section>
+
+    <section id="tab-guard" class="panel hidden">
+      <div class="card">
+        <h2>Guardrails</h2>
+        <label>Rollback min confidence (0–1)</label>
+        <input type="number" id="rollbackMin" step="0.05" min="0" max="1" value="0.55" />
+        <label>Extra restricted path substrings (comma)</label>
+        <input type="text" id="restrictedExtra" placeholder="production/secrets" />
+        <label>Safe zones (comma)</label>
+        <input type="text" id="safeZones" value="schema/,deployment_controller" />
+        <label class="switch"><input type="checkbox" id="catBlock" checked /> Catastrophic quarantine cap</label>
+        <button id="btnSaveGuard">Save guardrails</button>
+      </div>
+    </section>
+
+    <section id="tab-cicd" class="panel hidden">
+      <div class="card"><h2>Pipeline</h2><pre id="cicdBox" class="mono"></pre></div>
+    </section>
+
+    <section id="tab-biz" class="panel hidden">
+      <div class="card"><h2>Business metrics</h2><pre id="bizBox" class="mono"></pre></div>
+    </section>
+
+    <section id="tab-memory" class="panel hidden">
+      <div class="card">
+        <h2>Memory log</h2>
+        <button id="btnMemoryLookup">Lookup by current fault signature</button>
+        <pre id="memoryBox" class="mono"></pre>
+      </div>
+    </section>
+
+    <section id="tab-predict" class="panel hidden">
+      <div class="card"><h2>Predictive alerts</h2><pre id="predictBox" class="mono"></pre></div>
+    </section>
+
+    <section id="tab-evo" class="panel hidden">
+      <div class="card"><h2>Strategy evolution</h2><pre id="evoBox" class="mono"></pre></div>
+    </section>
+
+    <section id="tab-agents" class="panel hidden">
+      <div class="card">
+        <h2>Multi-agent specialization</h2>
+        <p class="hint">Spawn subagent with task containing <code>debug</code>, <code>patch</code>, or <code>test</code> — response includes specialized routing metadata on last step.</p>
+        <pre id="agentsBox" class="mono"></pre>
+      </div>
+    </section>
+
+    <section id="tab-logs" class="panel hidden">
+      <div class="card">
+        <h2>Real log ingestion</h2>
+        <textarea id="logLines" rows="8" placeholder="Paste stack traces / log lines"></textarea>
+        <button id="btnIngest">Ingest into session context</button>
+        <p class="hint">Ingested lines surface on subsequent <code>/step</code> responses as <code>external_log_tail</code>.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">OpenEnv · Autonomous SRE · Custom console (not Gradio)</footer>
+  <script src="/console/app.js"></script>
+</body>
+</html>

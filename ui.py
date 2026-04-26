@@ -494,8 +494,11 @@ def create_gradio_app() -> gr.Blocks:
             inputs=[task_dd],
             outputs=[postmortem_display, status_bar],
         )
+        def guided_demo_stream(task_id: str):
+            yield from run_guided_demo(env, task_id)
+
         run_guided_btn.click(
-            lambda task_id: run_guided_demo(env, task_id),
+            guided_demo_stream,
             inputs=[task_dd],
             outputs=[
                 sla_display,

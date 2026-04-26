@@ -16,6 +16,8 @@ COPY --chown=appuser:appuser app.py baseline.py client.py data.py environment.py
 # ui.py imports training.rollout for demo episode buttons; without this the UI never mounts in the Space image.
 # If you use the HF Space whitelist deploy workflow, also add this file to deploy-hf-space.yml.
 COPY --chown=appuser:appuser training/rollout.py ./training/rollout.py
+COPY --chown=appuser:appuser sre_platform ./sre_platform
+COPY --chown=appuser:appuser static/console ./static/console
 COPY --chown=appuser:appuser evaluation ./evaluation
 COPY --chown=appuser:appuser project_skills ./project_skills
 
