@@ -190,6 +190,7 @@ python scripts/publish_lora_artifacts.py
 
 - Slide deck/script for 90-120s judge demo: `DEMO_PITCH_SLIDES.md`
 - Guided recording mode in UI: `Run Guided Demo Mode` button
+- Video prep (API keys, Spaces, narration beats): `VIDEO_DEMO_SCRIPT.md`
 
 ## External Submission Links (fill before final form submit)
 
