@@ -257,7 +257,18 @@ def list_sessions(_auth: None = Depends(require_api_key)):
 
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.environ.get("PORT", 7860))
     # Spaces and container runtimes require binding on 0.0.0.0.
     host = os.environ.get("HOST", "0.0.0.0")
-    uvicorn.run(app, host=host, port=port)
+    # Hugging Face (and other TLS terminators) talk HTTP to the container but set
+    # X-Forwarded-Proto=https. Without this, Gradio emits http:// asset/API URLs →
+    # mixed-content blocks, 503s, and "Unsafe attempt to load URL http://... from https://...".
+    _fwd = os.environ.get("UVICORN_FORWARDED_ALLOW_IPS", "*")
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        proxy_headers=True,
+        forwarded_allow_ips=_fwd,
+    )
