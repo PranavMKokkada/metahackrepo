@@ -245,5 +245,6 @@ def list_sessions(_auth: None = Depends(require_api_key)):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 7860))
-    host = os.environ.get("HOST", "127.0.0.1")
+    # Spaces and container runtimes require binding on 0.0.0.0.
+    host = os.environ.get("HOST", "0.0.0.0")
     uvicorn.run(app, host=host, port=port)
