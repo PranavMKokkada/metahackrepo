@@ -58,19 +58,20 @@ PYTHON_BIN=".venv312/bin/python"
 echo "==> Upgrading pip..."
 "$PYTHON_BIN" -m pip install --upgrade pip
 
-echo "==> Installing runtime + training dependencies..."
-"$PYTHON_BIN" -m pip install -r requirements.txt
+echo "==> Installing training dependencies..."
 "$PYTHON_BIN" -m pip install -r requirements-training.txt
 
-echo "==> Installing/refreshing Hugging Face CLI tooling..."
-"$PYTHON_BIN" -m pip install -U "huggingface_hub[cli]"
-HF_CLI=".venv312/bin/hf"
-
 echo "==> Authenticating Hugging Face..."
-"$HF_CLI" login --token "$HF_TOKEN_INPUT" --add-to-git-credential
+HF_TOKEN_INPUT="$HF_TOKEN_INPUT" "$PYTHON_BIN" - <<'PY'
+import os
+from huggingface_hub import login, whoami
 
-echo "==> Verifying auth..."
-"$HF_CLI" whoami
+token = os.environ["HF_TOKEN_INPUT"]
+login(token=token, add_to_git_credential=True)
+info = whoami()
+name = info.get("name") or info.get("fullname") or "unknown-user"
+print(f"Authenticated as: {name}")
+PY
 
 echo "==> Generating SFT dataset..."
 "$PYTHON_BIN" training/generate_sft_data.py
