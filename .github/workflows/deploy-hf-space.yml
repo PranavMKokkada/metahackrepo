@@ -62,6 +62,9 @@ jobs:
             install -m0644 "${SRC}/${f}" "${DST}/${f}"
           done
 
+          mkdir -p "${DST}/training"
+          install -m0644 "${SRC}/training/rollout.py" "${DST}/training/rollout.py"
+
           cp -a "${SRC}/evaluation" "${DST}/evaluation"
           cp -a "${SRC}/project_skills" "${DST}/project_skills"
 
