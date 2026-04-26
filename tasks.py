@@ -78,7 +78,11 @@ TASK_DEFINITIONS: Dict[str, TaskDefinition] = {
 
 
 def run_grader(task_id: str, actions: List[dict]) -> dict:
-    """Replay an action sequence and grade the episode."""
+    """Replay an action sequence and grade the episode.
+
+    Uses an isolated ``CodeOrganismEnv`` (no HTTP ``/platform`` session state).
+    For judge parity with the live API, keep action payloads aligned with ``POST /step``.
+    """
     env = CodeOrganismEnv()
     env.reset(task_id)
     per_step: List[dict] = []
@@ -87,7 +91,7 @@ def run_grader(task_id: str, actions: List[dict]) -> dict:
 
     for action_dict in actions:
         try:
-            action = Action(**action_dict)
+            action = Action.model_validate(action_dict)
         except Exception as e:
             per_step.append({"error": str(e)})
             continue

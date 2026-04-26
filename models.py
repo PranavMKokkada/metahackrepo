@@ -14,7 +14,7 @@ import hashlib
 from enum import Enum
 from typing import Optional, Dict, List, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ── Enums ──────────────────────────────────────────────────────────────────────
@@ -127,6 +127,9 @@ class Observation(BaseModel):
 
 class Action(BaseModel):
     """What the agent submits each step (spec §4.2)."""
+
+    model_config = ConfigDict(extra="ignore")
+
     action_type: CodeOrganismActionType
 
     # Payloads (used depending on action_type)

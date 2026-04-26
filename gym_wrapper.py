@@ -17,6 +17,7 @@ except ImportError:
     from gym import spaces
 
 from models import Action, CodeOrganismActionType
+from data import CORE_PATH
 from environment import CodeOrganismEnv
 
 # Observation dimension calculation:
@@ -97,14 +98,10 @@ class CodeOrganismGymEnv(gym.Env):
         
         result = self._env.step(action)
         obs_vec = self._get_obs_vec(result.observation or self._env._make_observation())
-        
-        return (
-            obs_vec,
-            result.reward,
-            result.done,
-            False, # Not truncated by gym wrapper logic
-            result.info
-        )
+        term = result.info.get("termination", "")
+        truncated = bool(result.done and term == "timeout_death")
+        terminated = bool(result.done and not truncated)
+        return (obs_vec, result.reward, terminated, truncated, result.info)
 
     def _resolve_target_path(self) -> Optional[str]:
         failing_tests = [t for t in self._env._simulator.run_all_tests() if t.status != "PASS"]
@@ -133,7 +130,7 @@ class CodeOrganismGymEnv(gym.Env):
             )
         elif 4 <= action_idx <= 9:
             action_type = CodeOrganismActionType.PATCH_FILE
-            path = target_path
+            path = target_path or CORE_PATH
             diff = "retunr|return" if action_idx % 2 == 0 else "deaf |def "
         elif action_idx == 10:
             action_type = CodeOrganismActionType.QUARANTINE

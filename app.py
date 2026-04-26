@@ -139,28 +139,7 @@ def _run_environment_step(action: Action, x_session_id: Optional[str] = None) ->
         return blocked_or_pending
     result = env.step(action)
     st = STORE.get(x_session_id)
-    st.touch()
-    sre_services.record_evolution(st, env, action)
-    sre_services.advance_cicd_on_recovery(st, result.reward_breakdown.test_recovery > 0)
-    result.info["explanation"] = sre_services.explain_step(env, action, result)
-    preds = sre_services.predictive_scan(env)
-    st.last_predictions = preds
-    result.info["predictive_alerts"] = [
-        {"id": p.alert_id, "severity": p.severity, "pattern": p.pattern, "recommendation": p.recommendation}
-        for p in preds
-    ]
-    if action.action_type == CodeOrganismActionType.SPAWN_SUBAGENT:
-        result.info["specialized_agent"] = sre_services.specialized_subagent_detail(action.task)
-    if st.ingested_logs:
-        result.info["external_log_tail"] = st.ingested_logs[-12:]
-    sre_services.update_business_metrics(st, env, result)
-    if result.done:
-        sre_services.record_memory(
-            st,
-            env,
-            outcome=str(result.info.get("termination", "done")),
-            strategy=action.action_type.value,
-        )
+    sre_services.post_step_enrich(env, action, result, st)
     return result
 
 
@@ -280,7 +259,7 @@ def call_mcp_tool(tool_call: dict, x_session_id: Optional[str] = Header(None), _
     
     # Map MCP call to standard OpenEnv Action
     try:
-        action = Action(action_type=CodeOrganismActionType(name), **args)
+        action = Action.model_validate({"action_type": name, **(args or {})})
         return _run_environment_step(action, x_session_id)
     except Exception as e:
         raise HTTPException(400, f"MCP Protocol Error: {e}")
@@ -294,6 +273,7 @@ def create_session(_auth: None = Depends(require_api_key)):
 @app.delete("/sessions/{session_id}")
 def delete_session(session_id: str, _auth: None = Depends(require_api_key)):
     if sessions.delete(session_id):
+        STORE.drop(session_id)
         return {"deleted": session_id}
     raise HTTPException(404, "Session not found")
 

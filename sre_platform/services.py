@@ -71,6 +71,35 @@ def build_patch_suggestions(env, action: Action) -> List[PatchSuggestion]:
     return out[:5]
 
 
+MAX_INGESTED_LOG_LINES = 4000
+
+
+def post_step_enrich(env, action: Action, result: StepResult, st: SessionPlatformState) -> None:
+    """Shared post-step hooks for HTTP /step, MCP, and production approve paths."""
+    st.touch()
+    record_evolution(st, env, action)
+    advance_cicd_on_recovery(st, result.reward_breakdown.test_recovery > 0)
+    result.info["explanation"] = explain_step(env, action, result)
+    preds = predictive_scan(env)
+    st.last_predictions = preds
+    result.info["predictive_alerts"] = [
+        {"id": p.alert_id, "severity": p.severity, "pattern": p.pattern, "recommendation": p.recommendation}
+        for p in preds
+    ]
+    if action.action_type == CodeOrganismActionType.SPAWN_SUBAGENT:
+        result.info["specialized_agent"] = specialized_subagent_detail(action.task)
+    if st.ingested_logs:
+        result.info["external_log_tail"] = st.ingested_logs[-12:]
+    update_business_metrics(st, env, result)
+    if result.done:
+        record_memory(
+            st,
+            env,
+            outcome=str(result.info.get("termination", "done")),
+            strategy=action.action_type.value,
+        )
+
+
 def explain_step(env, action: Action, result: StepResult) -> Dict[str, Any]:
     """Structured explainability from environment + step outcome."""
     sim = env._simulator

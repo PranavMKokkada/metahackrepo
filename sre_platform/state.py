@@ -125,5 +125,11 @@ class PlatformStore:
             }
         )
 
+    def drop(self, session_id: Optional[str]) -> None:
+        """Remove platform state when an API session is deleted (not the default session)."""
+        sid = session_id or "default"
+        if sid != "default" and sid in self._by_session:
+            del self._by_session[sid]
+
 
 STORE = PlatformStore()

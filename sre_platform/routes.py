@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from environment import CodeOrganismEnv
-from models import Action, CodeOrganismActionType, StepResult
+from models import Action, CodeOrganismActionType, RewardBreakdown, StepResult
 
 from sre_platform import services
 from sre_platform.state import STORE, PendingProductionBatch
@@ -88,7 +88,6 @@ def build_platform_router(
         st = STORE.get(x_session_id)
         env = get_env(x_session_id)
         preds = services.predictive_scan(env)
-        st.last_predictions = preds
         return {
             "production_mode": st.production_mode,
             "pending_suggestion_batch": _pending_to_dict(st.pending),
@@ -166,14 +165,8 @@ def build_platform_router(
             raise HTTPException(403, err)
         result = env.step(action)
         st.pending = None
-        result.info["explanation"] = services.explain_step(env, action, result)
-        result.info["specialized_agent"] = None
-        services.advance_cicd_on_recovery(st, result.reward_breakdown.test_recovery > 0)
-        services.record_evolution(st, env, action)
-        services.update_business_metrics(st, env, result)
-        if result.done:
-            services.record_memory(st, env, outcome="episode_end", strategy="approved_patch")
-        return result.model_dump()
+        services.post_step_enrich(env, action, result, st)
+        return result
 
     @router.post("/session/production/reject")
     def reject_pending(
@@ -194,6 +187,8 @@ def build_platform_router(
         prefix = f"[{body.source}] "
         for line in body.lines[-500:]:
             st.ingested_logs.append(prefix + line)
+        if len(st.ingested_logs) > services.MAX_INGESTED_LOG_LINES:
+            st.ingested_logs = st.ingested_logs[-services.MAX_INGESTED_LOG_LINES :]
         return {"ingested": len(body.lines)}
 
     @router.get("/session/memory/lookup")
@@ -221,12 +216,25 @@ def apply_production_or_guardrails_step(
     st = STORE.get(session_id)
     err = services.validate_guardrails(env, action, st)
     if err:
+        st.touch()
+        obs = env._make_observation() if env._simulator else None
         return (
             StepResult(
-                observation=env._make_observation() if env._simulator else None,
+                observation=obs,
                 reward=-0.5,
+                reward_breakdown=RewardBreakdown(total=-0.5, watchdog_penalty=-0.5),
                 done=False,
-                info={"error": err, "guardrail_block": True},
+                info={
+                    "error": err,
+                    "guardrail_block": True,
+                    "explanation": {
+                        "root_cause": "Policy guardrail",
+                        "reasoning": err,
+                        "confidence_pct": 0.0,
+                        "impact": "No environment mutation applied.",
+                        "fix_summary": "blocked",
+                    },
+                },
             ),
             None,
         )
@@ -236,15 +244,15 @@ def apply_production_or_guardrails_step(
         import time as _time
         import uuid as _uuid
 
-        from sre_platform.state import PendingProductionBatch
-
         st.pending = PendingProductionBatch(
             batch_id=_uuid.uuid4().hex[:12],
             created_at=_time.time(),
             suggestions=sug,
             original_justification=action.justification or "",
         )
+        st.touch()
         obs = env._make_observation() if env._simulator else None
+        preds = services.predictive_scan(env)
         return (
             StepResult(
                 observation=obs,
@@ -253,6 +261,10 @@ def apply_production_or_guardrails_step(
                 info={
                     "production_mode": True,
                     "pending_human_review": True,
+                    "predictive_alerts": [
+                        {"id": p.alert_id, "severity": p.severity, "pattern": p.pattern, "recommendation": p.recommendation}
+                        for p in preds
+                    ],
                     "suggestions": [
                         {
                             "suggestion_id": s.suggestion_id,
