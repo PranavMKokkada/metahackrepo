@@ -4,11 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "results/**"
-      - "training/policies/**"
-      - "evaluation/report.md"
-      - ".github/workflows/upload-hf-artifacts.yml"
   workflow_dispatch:
 
 concurrency:
@@ -73,6 +68,16 @@ jobs:
                   folder_path=str(policies_dir),
                   path_in_repo="training/policies",
                   commit_message=f"Upload policy artifacts from {os.environ['GITHUB_SHA']}",
+              )
+
+          lora_dir = Path("artifacts/runtime/lora_adapter")
+          if lora_dir.exists():
+              api.upload_folder(
+                  repo_id=model_repo,
+                  repo_type="model",
+                  folder_path=str(lora_dir),
+                  path_in_repo="lora_adapter",
+                  commit_message=f"Upload LoRA adapter from {os.environ['GITHUB_SHA']}",
               )
 
           results_dir = Path("results")

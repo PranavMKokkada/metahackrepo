@@ -35,7 +35,7 @@ rubrics:
   - name: architecture_generalization
     weight: 0.10
 metadata:
-  huggingface_space: https://huggingface.co/spaces/PranavMKokkada/autonomous-sre
+  huggingface_space: https://huggingface.co/spaces/teletubbies/autonomous-sre
   theme: Self-Improvement
   sub_theme: Snorkel AI Simulated Experts
   author: Team Autonomous SRE

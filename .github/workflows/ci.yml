@@ -2,10 +2,6 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
-      - "feat/**"
-      - "feature/**"
   pull_request:
 
 jobs:
@@ -33,6 +29,33 @@ jobs:
       - name: Run tests
         run: |
           pytest -q
+
+      - name: Backend and UI smoke check
+        env:
+          CODEORGANISM_API_KEYS: ci-key
+          PORT: "7860"
+        run: |
+          set -euo pipefail
+          python app.py > /tmp/app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill $APP_PID || true; wait $APP_PID 2>/dev/null || true; echo "--- app log ---"; cat /tmp/app.log' EXIT
+          python - <<'PY'
+          import time, requests
+          for _ in range(60):
+              try:
+                  r = requests.get("http://127.0.0.1:7860/health", timeout=2)
+                  if r.status_code == 200:
+                      break
+              except Exception:
+                  pass
+              time.sleep(1)
+          else:
+              raise RuntimeError("app.py did not become healthy in time")
+          ui = requests.get("http://127.0.0.1:7860/ui", timeout=5)
+          if ui.status_code not in (200, 302, 307):
+              raise RuntimeError(f"Unexpected /ui status: {ui.status_code}")
+          print("health and ui smoke check passed")
+          PY
 
       - name: Print audited requirement pins
         run: |
