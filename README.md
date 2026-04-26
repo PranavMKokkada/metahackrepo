@@ -8,6 +8,23 @@ Autonomous SRE is an OpenEnv-style environment where an agent must keep a self-c
 - This environment turns incident remediation into a step-based control problem with explicit reward feedback.
 - It is designed for the OpenEnv hackathon "Self-Improvement" theme.
 
+## Hackathon Non-Negotiables Coverage
+
+This section maps directly to the OpenEnv India Hackathon 2026 finale requirements.
+
+- OpenEnv usage: implemented via OpenEnv-style API + `openenv.yaml`.
+- Working training path (Unsloth/TRL): `training/grpo_train.py` and `CodeOrganismVM_Training.ipynb`.
+- Real training evidence: imported LoRA run artifacts (`grpo_gpu_run_result.json`, logs, environment dump) + evaluation plots.
+- Discoverable runnable environment: Hugging Face Space at `https://huggingface.co/spaces/teletubbies/autonomous-sre`.
+- README with motivation + env behavior + evidence: this file.
+- Additional materials linked from README: pitch deck (`DEMO_PITCH_SLIDES.md`) and notebook (`CodeOrganismVM_Training.ipynb`).
+
+Final pre-submission gate:
+
+```bash
+python scripts/submission_preflight.py
+```
+
 ## What the Agent Sees
 
 - Vitality/SLA proxy score (`0-100`)
@@ -60,13 +77,14 @@ Important note:
 - This repository now includes reproducible evaluation evidence.
 - LoRA fine-tuning evidence can be imported from a completed external GPU run bundle.
 
-Notebook training log extraction (from a local copy of `Untitled20.ipynb`; not stored in git — use `training/extract_notebook_training.py --notebook path/to/your.ipynb`):
+Notebook training log extraction (from local notebook runs):
 
 - Logged steps: `60`
 - Initial loss: `2.569`
 - Final loss: `0.07755`
 - Best loss: `0.07705`
 - Artifacts: `results/notebook_training_metrics.json`, `results/notebook_training_curve.png`
+- Notebook assets: `CodeOrganismVM_Training.ipynb` (project notebook), `Untitled20.ipynb` (local run log notebook)
 
 ## Reproduce Results
 
@@ -76,6 +94,12 @@ python training/evaluate_policy.py --policies noop random heuristic stabilized s
 python training/plot_results.py --results-dir results --summary results/eval_summary.json
 python evaluation/run_eval.py
 python training/grpo_train.py --mode grpo
+```
+
+Notebook re-run option:
+
+```bash
+jupyter notebook CodeOrganismVM_Training.ipynb
 ```
 
 ## Python Version Split (Recommended)
@@ -165,6 +189,20 @@ python scripts/publish_lora_artifacts.py
 ## Demo Asset
 
 - Slide deck/script for 90-120s judge demo: `DEMO_PITCH_SLIDES.md`
+- Guided recording mode in UI: `Run Guided Demo Mode` button
+
+## External Submission Links (fill before final form submit)
+
+- Hugging Face Space URL: `https://huggingface.co/spaces/teletubbies/autonomous-sre`
+- Model repo URL: `https://huggingface.co/teletubbies/autonomous-sre-lora`
+- Dataset repo URL: `https://huggingface.co/datasets/teletubbies/autonomous-sre-logs`
+- Optional HF blog post URL: `ADD_YOUR_HF_BLOG_URL`
+- Optional <2 min YouTube demo URL: `ADD_YOUR_YOUTUBE_URL`
+
+Important:
+
+- Do not upload large video binaries to the environment repo/Space.
+- Use public URLs for blog/video references instead.
 
 ## Repository Pointers
 
