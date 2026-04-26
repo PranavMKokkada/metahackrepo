@@ -16,7 +16,6 @@ from sre_platform.state import (
     EvolutionSnapshot,
     MemoryEntry,
     PatchSuggestion,
-    PendingProductionBatch,
     PredictiveAlert,
     SessionPlatformState,
 )
@@ -32,30 +31,68 @@ def fault_signature_from_env(env) -> str:
 
 
 def build_patch_suggestions(env, action: Action) -> List[PatchSuggestion]:
-    """Rank candidate patches from failing tests + user diff (production mode)."""
-    obs = env._make_observation() if env._simulator else None
+    """Rank candidate patches from live faults, failing tests → file map, and operator diff."""
+    sim = env._simulator
+    obs = env._make_observation() if sim else None
     candidates: List[Tuple[str, str, str, float]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(path: str, diff: str, rationale: str, score: float) -> None:
+        key = (path, diff)
+        if key in seen or not path:
+            return
+        seen.add(key)
+        candidates.append((path, diff, rationale, score))
+
     if action.path and action.diff:
-        candidates.append((action.path, action.diff, "Operator-supplied diff (primary)", 0.95))
-    if obs:
+        add(str(action.path), str(action.diff), "Operator-supplied diff (primary)", 0.95)
+
+    if sim and obs:
+        # Active faults whose target is a source file in the simulator.
+        for f in sim.faults[:16]:
+            tgt = getattr(f, "target", "") or ""
+            if not isinstance(tgt, str) or not tgt.endswith(".py") or tgt not in sim.files:
+                continue
+            body = sim.files[tgt]
+            ft = getattr(f, "fault_type", "")
+            if ft == "corrupted_import" and ("improt" in body or "nonexistent_module" in body):
+                add(tgt, "improt |import ", f"Repair import corruption ({f.fault_id})", 0.88)
+
+        # Failing tests → owning file from the same test catalog the simulator uses.
         for t in obs.test_results:
-            if t.status != "PASS" and "import" in (t.message or "").lower():
-                path = "src/auth.py"
-                diff = "broken_import|import os"
-                candidates.append((path, diff, f"Stabilize import surface implied by {t.name}", 0.72))
-                break
-        for t in obs.test_results:
-            if t.status != "PASS":
-                path = "src/core.py"
-                diff = "retunr|return"
-                candidates.append((path, diff, f"Syntax hygiene heuristic from failing {t.name}", 0.68))
-                break
+            if t.status == "PASS":
+                continue
+            meta = sim.tests.get(t.name) or {}
+            path = meta.get("file")
+            if not path or path not in sim.files:
+                continue
+            content = sim.files[path]
+            msg = (t.message or "").lower()
+            if "import" in msg or "improt" in content:
+                add(path, "improt |import ", f"Import stability from failing `{t.name}`", 0.74)
+            if "retunr" in content:
+                add(path, "retunr|return", f"Syntax repair from failing `{t.name}`", 0.72)
+            if "deaf " in content:
+                add(path, "deaf |def ", f"Keyword repair from failing `{t.name}`", 0.71)
+            break
+
     if len(candidates) == 1 and action.path and action.diff:
-        path = action.path
-        alt = action.diff.replace("|", "|#alt:") if "|" in action.diff else f"{action.diff}|noop"
-        candidates.append((path, alt, "Conservative variant (lower blast radius)", 0.62))
-    if not candidates:
-        candidates.append(("src/core.py", "retunr|return", "Default ranked candidate", 0.5))
+        path = str(action.path)
+        alt = action.diff.replace("|", "|#alt:") if "|" in str(action.diff) else f"{action.diff}|noop"
+        add(path, alt, "Conservative variant (lower blast radius)", 0.62)
+
+    if not candidates and sim and sim.files:
+        for path in sorted(sim.files):
+            if not path.endswith(".py"):
+                continue
+            c = sim.files[path]
+            for typo, fix in (("retunr", "return"), ("improt ", "import "), ("deaf ", "def ")):
+                if typo in c:
+                    add(path, f"{typo}|{fix}", f"Live file scan: `{typo}` in `{path}`", 0.52)
+                    break
+            if candidates:
+                break
+
     out: List[PatchSuggestion] = []
     for i, (path, diff, rationale, score) in enumerate(sorted(candidates, key=lambda x: -x[3])):
         out.append(

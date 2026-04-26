@@ -11,7 +11,12 @@ import gradio as gr
 
 from models import Action, CodeOrganismActionType
 from environment import CodeOrganismEnv
+from session_runtime import sessions
+from sre_platform.step_executor import reset_env_with_platform, run_step_with_platform
 from training.rollout import run_episode
+
+# Same logical session as HTTP clients that omit x-session-id (see /console).
+UI_DEFAULT_SESSION_ID: str | None = None
 
 
 CUSTOM_CSS = """
@@ -194,7 +199,7 @@ def _format_episode_postmortem(trace: dict[str, Any]) -> str:
 
 
 def reset_center(env: CodeOrganismEnv, task_id: str):
-    obs = env.reset(task_id)
+    obs = reset_env_with_platform(env, task_id, UI_DEFAULT_SESSION_ID)
     return (
         get_sla_html(obs.vitality_score),
         format_impact_html(0, 0, "N/A"),
@@ -203,7 +208,7 @@ def reset_center(env: CodeOrganismEnv, task_id: str):
         "Waiting for incident...",
         obs.dependency_graph,
         obs.recent_signals,
-        [],
+        _format_alerts([]),
         "### Episode Postmortem\nNo episode replay yet.",
     )
 
@@ -211,10 +216,11 @@ def reset_center(env: CodeOrganismEnv, task_id: str):
 def trigger_chaos(env: CodeOrganismEnv):
     msg = env.inject_chaos()
     state = env.state()
+    obs = env._make_observation()
     return (
         get_sla_html(state.vitality),
         f"### CHAOS ENGINE ACTIVATED\n{msg}\nInjecting failure vectors...",
-        [],
+        _format_alerts(obs.alerts or []),
     )
 
 
@@ -229,7 +235,7 @@ def run_demo_episode(task_id: str, policy: str):
 
 def run_guided_demo(env: CodeOrganismEnv, task_id: str):
     """Auto-narrated walkthrough for recording a polished demo."""
-    obs = env.reset(task_id)
+    obs = reset_env_with_platform(env, task_id, UI_DEFAULT_SESSION_ID)
     intro = (
         "### Guided Demo Mode\n"
         "**Stage 1 - Situation Awareness**\n"
@@ -327,7 +333,7 @@ def run_guided_demo(env: CodeOrganismEnv, task_id: str):
     ]
 
     for idx, (title, action, explanation) in enumerate(scripted_actions, start=1):
-        result = env.step(action)
+        result = run_step_with_platform(env, action, UI_DEFAULT_SESSION_ID)
         obs = result.observation or env._make_observation()
         state = env.state()
         sre = result.info.get(
@@ -394,9 +400,21 @@ def process_protocol(
             signal_data={"target": path} if signal_type == "INTENT_PATCH" else None,
             justification=justification or "",
         )
-        result = env.step(action)
+        result = run_step_with_platform(env, action, UI_DEFAULT_SESSION_ID)
     except Exception as exc:
-        return None, None, f"### PROTOCOL ERROR\n{exc}", "IDLE", "FAILURE", {}, [], "", "### Episode Postmortem\nProtocol failed."
+        obs = env._make_observation()
+        err = f"### PROTOCOL ERROR\n{exc}"
+        return (
+            get_sla_html(obs.vitality_score),
+            format_impact_html(0, 0, "High"),
+            _format_diagnostics(obs.test_results),
+            err,
+            obs.stack_trace or "No active stack traces.",
+            obs.dependency_graph,
+            obs.recent_signals,
+            _format_alerts(obs.alerts or []),
+            "### Episode Postmortem\nProtocol failed.",
+        )
 
     obs = result.observation or env._make_observation()
     state = env.state()
@@ -418,12 +436,16 @@ def process_protocol(
 
 
 def create_gradio_app() -> gr.Blocks:
-    env = CodeOrganismEnv()
-    with gr.Blocks(title="Autonomous SRE Control Center", css=CUSTOM_CSS) as demo:
+    env = sessions.get(UI_DEFAULT_SESSION_ID)
+    with gr.Blocks(title="Autonomous SRE Control Center") as demo:
         with gr.Row():
             with gr.Column(scale=3):
                 gr.Markdown("# Autonomous SRE Control Center")
-                gr.Markdown("**Self-Healing Infrastructure Dashboard**")
+                gr.Markdown(
+                    "**Self-Healing Infrastructure Dashboard** — live OpenEnv state. "
+                    "Actions here use the **same default session** as the REST API (no `x-session-id`) "
+                    "and **`/console`** platform metrics (production mode, guardrails, CI/CD, memory)."
+                )
             with gr.Column(scale=1):
                 task_dd = gr.Dropdown(["phase_1", "phase_2", "phase_3"], value="phase_1", label="Incident Profile")
                 reset_btn = gr.Button("Initialize Session", variant="secondary", elem_classes=["action-btn"])
@@ -439,6 +461,11 @@ def create_gradio_app() -> gr.Blocks:
                 run_noop_btn = gr.Button("Run Baseline Episode", elem_classes=["action-btn"])
                 run_heuristic_btn = gr.Button("Run Heuristic Episode", elem_classes=["action-btn"])
                 run_guided_btn = gr.Button("Run Guided Demo Mode", elem_classes=["action-btn"])
+                gr.Markdown(
+                    "<small>**Note:** *Baseline* and *Heuristic* buttons run a **separate offline rollout** "
+                    "for episode summaries only. **Guided demo**, **Initialize Session**, and **Execute Remediation** "
+                    "drive the **live** environment wired to `/console`.</small>"
+                )
 
         with gr.Row():
             with gr.Column(scale=1):

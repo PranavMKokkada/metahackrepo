@@ -13,26 +13,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from models import Action, CodeOrganismActionType, Observation, StepResult, EnvState
-from environment import SessionManager
+from models import Action, Observation, StepResult, EnvState
 from tasks import TASK_DEFINITIONS, run_grader
 
-from sre_platform import services as sre_services
-from sre_platform.routes import apply_production_or_guardrails_step, build_platform_router
+from session_runtime import sessions
+from sre_platform.routes import build_platform_router
 from sre_platform.state import STORE
+from sre_platform.step_executor import reset_env_with_platform, run_step_with_platform
 
 # Gradio must stay available even if the UI module fails (e.g. missing optional paths in Docker).
 gr = None
 create_gradio_app = None
+CUSTOM_CSS: Optional[str] = None
 try:
     import gradio as gr
 except ImportError:
     gr = None
 if gr is not None:
     try:
-        from ui import create_gradio_app
+        from ui import CUSTOM_CSS, create_gradio_app
     except ImportError:
         create_gradio_app = None
+        CUSTOM_CSS = None
         import warnings
 
         warnings.warn(
@@ -47,7 +49,9 @@ def _csv_env(name: str, default: str = "") -> List[str]:
 
 
 RUNTIME_API_KEY = secrets.token_urlsafe(32)
-CONFIGURED_API_KEYS = set(_csv_env("CODEORGANISM_API_KEYS"))
+_API_KEYS_FROM_ENV_LIST = _csv_env("CODEORGANISM_API_KEYS")
+API_KEYS_CONFIGURED_IN_ENV = bool(_API_KEYS_FROM_ENV_LIST)
+CONFIGURED_API_KEYS = set(_API_KEYS_FROM_ENV_LIST)
 if not CONFIGURED_API_KEYS:
     CONFIGURED_API_KEYS.add(RUNTIME_API_KEY)
 
@@ -72,13 +76,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Session manager holds all environment instances
-sessions = SessionManager()
-
 # Mount the interactive UI when Gradio is installed (may replace `app` reference).
 if gr is not None and create_gradio_app is not None:
     demo = create_gradio_app()
-    app = gr.mount_gradio_app(app, demo, path="/ui")
+    app = gr.mount_gradio_app(app, demo, path="/ui", css=CUSTOM_CSS)
 
 _console_dir = os.path.join(os.path.dirname(__file__), "static", "console")
 if os.path.isdir(_console_dir):
@@ -134,13 +135,7 @@ def _get_env(session_id: Optional[str] = None):
 
 def _run_environment_step(action: Action, x_session_id: Optional[str] = None) -> StepResult:
     env = _get_env(x_session_id)
-    blocked_or_pending, _ = apply_production_or_guardrails_step(env, action, x_session_id)
-    if blocked_or_pending is not None:
-        return blocked_or_pending
-    result = env.step(action)
-    st = STORE.get(x_session_id)
-    sre_services.post_step_enrich(env, action, result, st)
-    return result
+    return run_step_with_platform(env, action, x_session_id)
 
 
 @app.get("/")
@@ -197,9 +192,7 @@ def reset(
     if actual_task_id not in TASK_DEFINITIONS:
         raise HTTPException(400, f"Unknown task_id: {actual_task_id}")
     env = _get_env(x_session_id)
-    obs = env.reset(actual_task_id)
-    sre_services.on_env_reset(STORE.get(x_session_id), env)
-    return obs
+    return reset_env_with_platform(env, actual_task_id, x_session_id)
 
 @app.post("/step", response_model=StepResult)
 def step(action: Action, x_session_id: Optional[str] = Header(None), _auth: None = Depends(require_api_key)):
@@ -255,7 +248,7 @@ def call_mcp_tool(tool_call: dict, x_session_id: Optional[str] = Header(None), _
     """Universal MCP Tool Executor."""
     name = tool_call.get("name")
     args = tool_call.get("arguments", {})
-    env = _get_env(x_session_id)
+    _get_env(x_session_id)
     
     # Map MCP call to standard OpenEnv Action
     try:
@@ -285,6 +278,13 @@ def list_sessions(_auth: None = Depends(require_api_key)):
 
 if __name__ == "__main__":
     import uvicorn
+
+    if not API_KEYS_CONFIGURED_IN_ENV and not AUTH_DISABLED:
+        print(
+            "CODEORGANISM_API_KEYS not set; using ephemeral x-api-key (see Space / Docker logs). "
+            f"Paste into /console or send as x-api-key header: {RUNTIME_API_KEY}",
+            flush=True,
+        )
 
     port = int(os.environ.get("PORT", 7860))
     # Spaces and container runtimes require binding on 0.0.0.0.

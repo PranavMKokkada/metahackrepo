@@ -56,9 +56,10 @@ jobs:
           fi
 
           for f in \
-            app.py baseline.py client.py data.py environment.py gym_wrapper.py \
+            app.py session_runtime.py baseline.py client.py data.py environment.py gym_wrapper.py \
             inference.py models.py rubrics.py tasks.py test_api.py test_env.py \
-            ui.py validate.py openenv.yaml pyproject.toml; do
+            ui.py validate.py openenv.yaml pyproject.toml \
+            BLOG_POST.md CodeOrganismVM_Training.ipynb; do
             install -m0644 "${SRC}/${f}" "${DST}/${f}"
           done
 

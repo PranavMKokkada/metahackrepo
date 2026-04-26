@@ -20,11 +20,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pip-audit
+          pip install pip-audit ruff
+
+      - name: Ruff lint
+        run: ruff check .
 
       - name: Syntax check
         run: |
-          python -m py_compile app.py server/app.py data.py environment.py gym_wrapper.py inference.py models.py tasks.py ui.py validate.py baseline.py client.py training/generate_sft_data.py training/grpo_train.py training/curriculum.py test_api.py test_env.py sre_platform/__init__.py sre_platform/state.py sre_platform/services.py sre_platform/routes.py
+          python -m py_compile app.py session_runtime.py server/app.py data.py environment.py gym_wrapper.py inference.py models.py tasks.py ui.py validate.py baseline.py client.py training/generate_sft_data.py training/grpo_train.py training/curriculum.py test_api.py test_env.py sre_platform/__init__.py sre_platform/state.py sre_platform/services.py sre_platform/routes.py sre_platform/step_executor.py
 
       - name: Run tests
         run: |
