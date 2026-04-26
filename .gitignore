@@ -61,6 +61,8 @@ offline_models/
 *.pdf
 *.docx
 *.ipynb
+# Required for HF Space deploy + hackathon submission (judges' notebook URL).
+!CodeOrganismVM_Training.ipynb
 *.tar.gz
 *.zip
 trainingthings_images/
