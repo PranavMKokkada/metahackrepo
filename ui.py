@@ -4,6 +4,7 @@ Autonomous SRE Control Center — Industry-Grade AI Operations Interface.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import gradio as gr
@@ -226,6 +227,150 @@ def run_demo_episode(task_id: str, policy: str):
     )
 
 
+def run_guided_demo(env: CodeOrganismEnv, task_id: str):
+    """Auto-narrated walkthrough for recording a polished demo."""
+    obs = env.reset(task_id)
+    intro = (
+        "### Guided Demo Mode\n"
+        "**Stage 1 - Situation Awareness**\n"
+        "A fresh incident scenario is provisioned. The agent inspects health, diagnostics, and the service graph before acting."
+    )
+    yield (
+        get_sla_html(obs.vitality_score),
+        format_impact_html(0, 0, "N/A"),
+        _format_diagnostics(obs.test_results),
+        f"**CLUSTER:** {task_id.upper()} | **ID:** {env._episode_id} | **MODE:** GUIDED_DEMO",
+        obs.stack_trace or "No active stack traces.",
+        obs.dependency_graph,
+        obs.recent_signals,
+        _format_alerts(obs.alerts or []),
+        "### Episode Postmortem\nGuided demo started.",
+        intro,
+    )
+    time.sleep(0.8)
+
+    chaos_msg = env.inject_chaos()
+    obs = env._make_observation()
+    yield (
+        get_sla_html(obs.vitality_score),
+        format_impact_html(0, 0, "High"),
+        _format_diagnostics(obs.test_results),
+        "**MODE:** GUIDED_DEMO | Chaos injected intentionally",
+        chaos_msg,
+        obs.dependency_graph,
+        obs.recent_signals,
+        _format_alerts(obs.alerts or []),
+        "### Episode Postmortem\nChaos event introduced for controlled demonstration.",
+        (
+            "### Guided Demo Mode\n"
+            "**Stage 2 - Controlled Failure Injection**\n"
+            "The chaos engine injects live faults to show this is not a static UI replay."
+        ),
+    )
+    time.sleep(0.8)
+
+    scripted_actions = [
+        (
+            "Signal remediation intent",
+            Action(
+                action_type=CodeOrganismActionType.EMIT_SIGNAL,
+                signal_type="INTENT_PATCH",
+                signal_data={"target": "src/core.py"},
+                justification="Broadcasting repair intent for coordinated execution.",
+            ),
+            "The agent announces intent first, earning coordination behavior and reducing blind actions.",
+        ),
+        (
+            "Run diagnostics",
+            Action(
+                action_type=CodeOrganismActionType.RUN_TESTS,
+                justification="Gather fresh test status before changing code.",
+            ),
+            "Diagnostics establish ground truth and prevent random patching.",
+        ),
+        (
+            "Patch a known failure pattern",
+            Action(
+                action_type=CodeOrganismActionType.PATCH_FILE,
+                path="src/core.py",
+                diff="retunr|return",
+                justification="Apply deterministic hotfix for syntax corruption.",
+            ),
+            "A surgical patch is applied to recover execution safety.",
+        ),
+        (
+            "Delegate parallel stabilization",
+            Action(
+                action_type=CodeOrganismActionType.SPAWN_SUBAGENT,
+                task="stabilize dependent services and clear residual regressions",
+                justification="Parallelize remediation under time pressure.",
+            ),
+            "Subagent delegation demonstrates multi-agent coordination in long-horizon recovery.",
+        ),
+        (
+            "Request expert validation",
+            Action(
+                action_type=CodeOrganismActionType.REQUEST_EXPERT,
+                query="Validate whether the latest patch is safe and production-worthy.",
+                justification="Safety gate before declaring recovery.",
+            ),
+            "Expert feedback closes the loop by checking patch quality, not just immediate test pass rate.",
+        ),
+        (
+            "Re-run tests for verification",
+            Action(
+                action_type=CodeOrganismActionType.RUN_TESTS,
+                justification="Confirm that remediation improved runtime behavior.",
+            ),
+            "Final verification demonstrates measurable behavior change after intervention.",
+        ),
+    ]
+
+    for idx, (title, action, explanation) in enumerate(scripted_actions, start=1):
+        result = env.step(action)
+        obs = result.observation or env._make_observation()
+        state = env.state()
+        sre = result.info.get(
+            "sre_metrics",
+            {"confidence": 0.0, "risk_assessment": "High", "downtime_saved_total": 0.0},
+        )
+        status_line = (
+            f"**MODE:** GUIDED_DEMO | **STEP:** {obs.timestep} | "
+            f"**ACTION:** {action.action_type.value} | **REWARD:** {result.reward:.4f}"
+        )
+        if result.done:
+            status_line = f"### SESSION COMPLETE | FINAL_REWARD: {state.cumulative_reward:.4f}"
+
+        narrative = (
+            "### Guided Demo Mode\n"
+            f"**Stage 3.{idx} - {title}**\n"
+            f"{explanation}\n\n"
+            f"- Action: `{action.action_type.value}`\n"
+            f"- Reward (step): `{result.reward:.4f}`\n"
+            f"- Cumulative reward: `{state.cumulative_reward:.4f}`\n"
+            f"- Vitality: `{obs.vitality_score:.1f}%`"
+        )
+        yield (
+            get_sla_html(obs.vitality_score),
+            format_impact_html(
+                sre.get("downtime_saved_total", 0),
+                sre.get("confidence", 0),
+                sre.get("risk_assessment", "High"),
+            ),
+            _format_diagnostics(obs.test_results),
+            status_line,
+            obs.stack_trace or "No active stack traces.",
+            obs.dependency_graph,
+            obs.recent_signals,
+            _format_alerts(obs.alerts or []),
+            result.info.get("postmortem") or "### Episode Postmortem\nGuided demo in progress.",
+            narrative,
+        )
+        time.sleep(0.8)
+        if result.done:
+            break
+
+
 def process_protocol(
     env: CodeOrganismEnv,
     action_type: str,
@@ -293,6 +438,7 @@ def create_gradio_app() -> gr.Blocks:
                 chaos_btn = gr.Button("Trigger Chaos Incident", elem_classes=["chaos-btn"])
                 run_noop_btn = gr.Button("Run Baseline Episode", elem_classes=["action-btn"])
                 run_heuristic_btn = gr.Button("Run Heuristic Episode", elem_classes=["action-btn"])
+                run_guided_btn = gr.Button("Run Guided Demo Mode", elem_classes=["action-btn"])
 
         with gr.Row():
             with gr.Column(scale=1):
@@ -306,6 +452,9 @@ def create_gradio_app() -> gr.Blocks:
                     world_model_display = gr.JSON(label=None, show_label=False)
 
             with gr.Column(scale=2):
+                guided_demo_brief = gr.Markdown(
+                    "### Guided Demo Mode\nUse this to auto-run a narrated, judge-friendly walkthrough."
+                )
                 with gr.Tabs(elem_classes=["sre-panel"]):
                     with gr.Tab("Remediation Protocol"):
                         gr.Markdown("### Command Console")
@@ -344,6 +493,22 @@ def create_gradio_app() -> gr.Blocks:
             lambda task_id: run_demo_episode(task_id, "heuristic"),
             inputs=[task_dd],
             outputs=[postmortem_display, status_bar],
+        )
+        run_guided_btn.click(
+            lambda task_id: run_guided_demo(env, task_id),
+            inputs=[task_dd],
+            outputs=[
+                sla_display,
+                impact_display,
+                test_display,
+                status_bar,
+                stack_display,
+                world_model_display,
+                signals_display,
+                alerts_display,
+                postmortem_display,
+                guided_demo_brief,
+            ],
         )
         submit_btn.click(
             lambda action_type, path, diff, sub_task, checkpoint_id, query, signal_type, justification: process_protocol(
