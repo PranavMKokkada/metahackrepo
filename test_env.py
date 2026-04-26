@@ -9,13 +9,18 @@ from __future__ import annotations
 
 import pytest
 from models import (
-    Action, CodeOrganismActionType, Observation, RewardBreakdown,
-    EnvState, FileEntry, TestResult, SubagentResult, ExpertResponse,
+    Action,
+    CodeOrganismActionType,
+    Observation,
+    RewardBreakdown,
+    EnvState,
+    FileEntry,
+    TestResult,
+    SubagentResult,
+    ExpertResponse,
 )
 from data import CodebaseSimulator, is_protected_path
-from environment import (
-    CodeOrganismEnv, SessionManager, VITALITY_COSTS,
-)
+from environment import CodeOrganismEnv, SessionManager, VITALITY_COSTS
 from tasks import TASK_DEFINITIONS, run_grader
 
 

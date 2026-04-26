@@ -50,6 +50,18 @@ testpaths = [
     "test_api.py",
 ]
 
+[tool.ruff]
+line-length = 120
+exclude = [
+    ".git",
+    ".venv*",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.ipynb",
+    "bundle_extract",
+]
+
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
