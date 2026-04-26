@@ -15,20 +15,60 @@ from training.rollout import run_episode
 
 CUSTOM_CSS = """
 .gradio-container {
-    background: #020617 !important;
-    color: #f8fafc !important;
-    font-family: 'JetBrains Mono', 'Inter', sans-serif !important;
+    background: #0a0a0a !important;
+    color: #f5f5f5 !important;
+    font-family: 'Inter', 'Segoe UI', Arial, sans-serif !important;
+}
+.gradio-container h1, .gradio-container h2, .gradio-container h3, .gradio-container h4 {
+    letter-spacing: 0.02em;
+}
+.gradio-container .prose p,
+.gradio-container .prose li,
+.gradio-container .prose span {
+    color: #d4d4d4 !important;
+}
+.gradio-container .gr-button,
+.gradio-container button {
+    border-radius: 10px !important;
+    border: 1px solid #2f2f2f !important;
+    background: #171717 !important;
+    color: #f5f5f5 !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
+}
+.gradio-container .gr-button:hover,
+.gradio-container button:hover {
+    border-color: #525252 !important;
+    background: #1f1f1f !important;
+}
+.gradio-container input,
+.gradio-container textarea,
+.gradio-container .gr-dropdown,
+.gradio-container .gr-textbox,
+.gradio-container .gr-json {
+    background: #111111 !important;
+    color: #f5f5f5 !important;
+    border: 1px solid #2c2c2c !important;
+}
+.gradio-container .gr-tab-nav button {
+    background: #121212 !important;
+    color: #d4d4d4 !important;
+    border: 1px solid #262626 !important;
+}
+.gradio-container .gr-tab-nav button.selected {
+    color: #ffffff !important;
+    border-color: #525252 !important;
+    background: #1a1a1a !important;
 }
 .sre-panel {
-    background: rgba(15, 23, 42, 0.8) !important;
-    backdrop-filter: blur(12px);
-    border: 1px solid #1e293b !important;
+    background: #121212 !important;
+    border: 1px solid #262626 !important;
     border-radius: 12px !important;
     padding: 20px !important;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 .metric-label {
-    color: #64748b;
+    color: #a3a3a3;
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.15em;
@@ -36,49 +76,45 @@ CUSTOM_CSS = """
     margin-bottom: 4px;
 }
 .terminal-output {
-    background: #000 !important;
-    border: 1px solid #0f172a !important;
-    color: #38bdf8 !important;
-    font-family: 'Fira Code', monospace !important;
+    background: #090909 !important;
+    border: 1px solid #262626 !important;
+    color: #f5f5f5 !important;
+    font-family: 'JetBrains Mono', 'Consolas', monospace !important;
     font-size: 0.85rem !important;
 }
 .action-btn {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
-    border: none !important;
-    font-weight: 800 !important;
-    border-radius: 8px !important;
+    background: #171717 !important;
+    border: 1px solid #2f2f2f !important;
+    font-weight: 700 !important;
+    border-radius: 10px !important;
+    color: #f5f5f5 !important;
 }
 .chaos-btn {
-    background: linear-gradient(135deg, #f43f5e 0%, #9f1239 100%) !important;
-    border: none !important;
-    font-weight: 800 !important;
-    color: white !important;
+    background: #1b1b1b !important;
+    border: 1px solid #3b3b3b !important;
+    font-weight: 700 !important;
+    color: #ffffff !important;
 }
-@keyframes pulse-emerald {
-    0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
-    70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-}
-.sla-active { animation: pulse-emerald 2s infinite; }
+.sla-active { border-color: #4a4a4a !important; }
 """
 
 
 def _risk_color(risk: str) -> str:
     if risk == "Low":
-        return "#10b981"
+        return "#d4d4d4"
     if risk == "Medium":
-        return "#f59e0b"
-    return "#f43f5e"
+        return "#a3a3a3"
+    return "#ffffff"
 
 
 def get_sla_html(vitality: float) -> str:
-    color = "#10b981"
+    color = "#f5f5f5"
     status = "HEALTHY"
     if vitality < 30:
-        color = "#f43f5e"
+        color = "#ffffff"
         status = "SLA BREACH"
     elif vitality < 70:
-        color = "#f59e0b"
+        color = "#d4d4d4"
         status = "DEGRADED"
 
     return f"""
@@ -93,7 +129,7 @@ def get_sla_html(vitality: float) -> str:
                 <div style="color: {color}; font-weight: 800; font-size: 0.9rem;">● {status}</div>
             </div>
         </div>
-        <div style="width: 100%; background: #0f172a; border-radius: 4px; height: 8px; overflow: hidden;">
+        <div style="width: 100%; background: #1a1a1a; border-radius: 4px; height: 8px; overflow: hidden;">
             <div style="width: {vitality}%; background: {color}; height: 100%; transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);"></div>
         </div>
     </div>
@@ -102,12 +138,12 @@ def get_sla_html(vitality: float) -> str:
 
 def format_impact_html(downtime: float, confidence: float, risk: str) -> str:
     risk_color = _risk_color(risk)
-    conf_color = "#10b981" if confidence > 0.8 else "#f59e0b"
+    conf_color = "#f5f5f5" if confidence > 0.8 else "#d4d4d4"
     return f"""
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
         <div class="sre-panel" style="padding: 12px !important;">
             <div class="metric-label">Downtime Avoided</div>
-            <div style="font-size: 1.2rem; font-weight: 800; color: #38bdf8;">{downtime:,.0f}s</div>
+            <div style="font-size: 1.2rem; font-weight: 800; color: #f5f5f5;">{downtime:,.0f}s</div>
         </div>
         <div class="sre-panel" style="padding: 12px !important;">
             <div class="metric-label">AI Confidence</div>
@@ -122,7 +158,7 @@ def format_impact_html(downtime: float, confidence: float, risk: str) -> str:
 
 
 def _format_diagnostics(test_results: list[Any]) -> str:
-    diag_text = "### 🛡️ Deployment Diagnostics\n\n| Service | Status | Log |\n| :--- | :--- | :--- |\n"
+    diag_text = "### Deployment Diagnostics\n\n| Service | Status | Log |\n| :--- | :--- | :--- |\n"
     for test in test_results:
         icon = "✅" if test.status == "PASS" else "❌"
         diag_text += f"| {test.name} | {icon} {test.status} | {test.message or '--'} |\n"
@@ -131,7 +167,7 @@ def _format_diagnostics(test_results: list[Any]) -> str:
 
 def _format_alerts(alerts: list[str]) -> str:
     return "".join(
-        f"<div style='background: rgba(244, 63, 94, 0.15); border-left: 4px solid #f43f5e; padding: 10px; margin-bottom: 8px; font-size: 0.8rem; font-weight: bold;'>{alert}</div>"
+        f"<div style='background: #161616; border-left: 3px solid #5a5a5a; padding: 10px; margin-bottom: 8px; font-size: 0.8rem; font-weight: 600;'>{alert}</div>"
         for alert in alerts
     )
 
@@ -143,7 +179,7 @@ def _format_episode_postmortem(trace: dict[str, Any]) -> str:
         for a in actions
     ) or "- no actions logged"
     return (
-        "### 📄 Episode Postmortem\n"
+        "### Episode Postmortem\n"
         f"- Policy: `{trace.get('policy')}`\n"
         f"- Task: `{trace.get('task_id')}`\n"
         f"- Seed: `{trace.get('seed')}`\n"
@@ -151,7 +187,7 @@ def _format_episode_postmortem(trace: dict[str, Any]) -> str:
         f"- Survived: `{trace.get('survived')}`\n"
         f"- Total Reward: `{trace.get('total_reward')}`\n"
         f"- Final Vitality: `{trace.get('final_vitality')}`\n"
-        "\n### ⏱ Timeline\n"
+        "\n### Timeline\n"
         f"{timeline}"
     )
 
@@ -161,13 +197,13 @@ def reset_center(env: CodeOrganismEnv, task_id: str):
     return (
         get_sla_html(obs.vitality_score),
         format_impact_html(0, 0, "N/A"),
-        "### 🔎 Diagnostics\nInitializing telemetry...\nREADY.",
+        "### Diagnostics\nInitializing telemetry...\nREADY.",
         f"**CLUSTER:** {task_id.upper()} | **ID:** {env._episode_id}",
         "Waiting for incident...",
         obs.dependency_graph,
         obs.recent_signals,
         [],
-        "### 📄 Episode Postmortem\nNo episode replay yet.",
+        "### Episode Postmortem\nNo episode replay yet.",
     )
 
 
@@ -176,7 +212,7 @@ def trigger_chaos(env: CodeOrganismEnv):
     state = env.state()
     return (
         get_sla_html(state.vitality),
-        f"### 🚨 CHAOS ENGINE ACTIVATED\n{msg}\nInjecting failure vectors...",
+        f"### CHAOS ENGINE ACTIVATED\n{msg}\nInjecting failure vectors...",
         [],
     )
 
@@ -186,7 +222,7 @@ def run_demo_episode(task_id: str, policy: str):
     trace = run_episode(policy=policy, task_id=task_id, seed=seed).to_dict()
     return (
         _format_episode_postmortem(trace),
-        f"### ✅ Demo run complete\nPolicy `{policy}` on `{task_id}` finished.",
+        f"### Demo run complete\nPolicy `{policy}` on `{task_id}` finished.",
     )
 
 
@@ -215,14 +251,14 @@ def process_protocol(
         )
         result = env.step(action)
     except Exception as exc:
-        return None, None, f"### ⚠️ PROTOCOL ERROR\n{exc}", "IDLE", "FAILURE", {}, [], "", "### 📄 Episode Postmortem\nProtocol failed."
+        return None, None, f"### PROTOCOL ERROR\n{exc}", "IDLE", "FAILURE", {}, [], "", "### Episode Postmortem\nProtocol failed."
 
     obs = result.observation or env._make_observation()
     state = env.state()
     sre = result.info.get("sre_metrics", {"confidence": 0, "risk_assessment": "High", "downtime_saved_total": 0})
     status_line = f"**STEP:** {obs.timestep} | **CUMULATIVE_EFFICIENCY:** {state.cumulative_reward:.4f}"
     if result.done:
-        status_line = f"### 🏁 SESSION COMPLETE | FINAL_REWARD: {state.cumulative_reward:.4f}"
+        status_line = f"### SESSION COMPLETE | FINAL_REWARD: {state.cumulative_reward:.4f}"
     return (
         get_sla_html(obs.vitality_score),
         format_impact_html(sre["downtime_saved_total"], sre["confidence"], sre["risk_assessment"]),
@@ -232,7 +268,7 @@ def process_protocol(
         obs.dependency_graph,
         obs.recent_signals,
         _format_alerts(obs.alerts or []),
-        result.info.get("postmortem") or "### 📄 Episode Postmortem\nIn progress...",
+        result.info.get("postmortem") or "### Episode Postmortem\nIn progress...",
     )
 
 
@@ -241,11 +277,11 @@ def create_gradio_app() -> gr.Blocks:
     with gr.Blocks(title="Autonomous SRE Control Center", css=CUSTOM_CSS) as demo:
         with gr.Row():
             with gr.Column(scale=3):
-                gr.Markdown("# 🛰️ Autonomous SRE Control Center")
-                gr.Markdown("*Self-Healing Infrastructure Dashboard | Powered by Meta OpenEnv*")
+                gr.Markdown("# Autonomous SRE Control Center")
+                gr.Markdown("**Self-Healing Infrastructure Dashboard**")
             with gr.Column(scale=1):
-                task_dd = gr.Dropdown(["phase_1", "phase_2", "phase_3"], value="phase_1", label="Incident Difficulty Profile")
-                reset_btn = gr.Button("PROVISION CLUSTER", variant="secondary", elem_classes=["action-btn"])
+                task_dd = gr.Dropdown(["phase_1", "phase_2", "phase_3"], value="phase_1", label="Incident Profile")
+                reset_btn = gr.Button("Initialize Session", variant="secondary", elem_classes=["action-btn"])
 
         with gr.Row():
             with gr.Column(scale=2):
@@ -254,44 +290,44 @@ def create_gradio_app() -> gr.Blocks:
             with gr.Column(scale=1, elem_classes=["sre-panel"]):
                 gr.Markdown("<div class='metric-label'>System Log Feed</div>")
                 status_bar = gr.Markdown("Systems Standby.")
-                chaos_btn = gr.Button("🔥 TRIGGER CHAOS INCIDENT", elem_classes=["chaos-btn"])
-                run_noop_btn = gr.Button("▶️ RUN BASELINE EPISODE", elem_classes=["action-btn"])
-                run_heuristic_btn = gr.Button("▶️ RUN HEURISTIC EPISODE", elem_classes=["action-btn"])
+                chaos_btn = gr.Button("Trigger Chaos Incident", elem_classes=["chaos-btn"])
+                run_noop_btn = gr.Button("Run Baseline Episode", elem_classes=["action-btn"])
+                run_heuristic_btn = gr.Button("Run Heuristic Episode", elem_classes=["action-btn"])
 
         with gr.Row():
             with gr.Column(scale=1):
                 with gr.Column(elem_classes=["sre-panel"]):
-                    gr.Markdown("<div class='metric-label'>🚨 Incident Alerts</div>")
+                    gr.Markdown("<div class='metric-label'>Incident Alerts</div>")
                     alerts_display = gr.HTML("")
-                    gr.Markdown("<div class='metric-label'>📡 Node Signals</div>")
+                    gr.Markdown("<div class='metric-label'>Node Signals</div>")
                     signals_display = gr.JSON(label=None, show_label=False)
                 with gr.Column(elem_classes=["sre-panel"]):
-                    gr.Markdown("<div class='metric-label'>🏗️ Deployment Topology</div>")
+                    gr.Markdown("<div class='metric-label'>Deployment Topology</div>")
                     world_model_display = gr.JSON(label=None, show_label=False)
 
             with gr.Column(scale=2):
                 with gr.Tabs(elem_classes=["sre-panel"]):
                     with gr.Tab("Remediation Protocol"):
-                        gr.Markdown("### 🕹 COMMAND CONSOLE")
+                        gr.Markdown("### Command Console")
                         with gr.Row():
-                            action_type = gr.Dropdown([e.value for e in CodeOrganismActionType], value="patch_file", label="OP_CODE")
-                            path_box = gr.Textbox(label="TARGET_NODE", placeholder="src/core.py")
-                            signal_box = gr.Textbox(label="SIGNAL_METADATA", placeholder="INTENT_PATCH")
+                            action_type = gr.Dropdown([e.value for e in CodeOrganismActionType], value="patch_file", label="Operation")
+                            path_box = gr.Textbox(label="Target Path", placeholder="src/core.py")
+                            signal_box = gr.Textbox(label="Signal Metadata", placeholder="INTENT_PATCH")
                         with gr.Row():
-                            diff_box = gr.Textbox(label="REMEDIATION_PAYLOAD", lines=3, placeholder="OLD|NEW")
-                            justification_box = gr.Textbox(label="PROTOCOL_JUSTIFICATION", lines=3)
+                            diff_box = gr.Textbox(label="Remediation Payload", lines=3, placeholder="OLD|NEW")
+                            justification_box = gr.Textbox(label="Justification", lines=3)
                         with gr.Row():
-                            sub_task_box = gr.Textbox(label="DELEGATED_SUBTASK")
-                            query_box = gr.Textbox(label="EXPERT_ORACLE_QUERY")
-                            checkpoint_box = gr.Textbox(label="RESTORE_POINT_ID")
-                        submit_btn = gr.Button("EXECUTE REMEDIATION", variant="primary", elem_classes=["action-btn"])
+                            sub_task_box = gr.Textbox(label="Delegated Subtask")
+                            query_box = gr.Textbox(label="Expert Oracle Query")
+                            checkpoint_box = gr.Textbox(label="Restore Point ID")
+                        submit_btn = gr.Button("Execute Remediation", variant="primary", elem_classes=["action-btn"])
 
                     with gr.Tab("Active Diagnostics"):
                         test_display = gr.Markdown("TELEMETRY_IDLE")
                     with gr.Tab("Error Trace"):
                         stack_display = gr.Markdown("", elem_classes=["terminal-output"])
                     with gr.Tab("Episode Postmortem"):
-                        postmortem_display = gr.Markdown("### 📄 Episode Postmortem\nNo episode replay yet.")
+                        postmortem_display = gr.Markdown("### Episode Postmortem\nNo episode replay yet.")
 
         reset_btn.click(
             lambda task_id: reset_center(env, task_id),
