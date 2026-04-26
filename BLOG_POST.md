@@ -1,67 +1,103 @@
-# The bruised codebase: building an OpenEnv where the agent actually learns
+# The bruised codebase
 
-*A field note—not a manual—about Autonomous SRE / CodeOrganismVM.*
+**Autonomous SRE / CodeOrganismVM** · OpenEnv-style incident sandbox
 
----
-
-There is a moment every engineer recognises: the dashboard is green, the pager is quiet, and you still do not trust the system. Not because the metrics lie, but because **incidents are long stories**. A typo slips in, a test flips red, someone patches in a hurry, and three days later the same ghost wears a new costume. Short-horizon “fix the line” thinking breaks there. **Super-long-horizon planning** begins there.
-
-We built this project around that feeling—and around the hackathon’s invitation to treat **self-improvement**, **multi-agent coordination**, and **world modelling** as first-class themes, not afterthoughts.
-
-## The world we put in front of the model
-
-Instead of asking a model to recite how *Kubernetes* works, we give it a **small, hostile codebase** that refuses to stay healthy. Faults arrive on a schedule you did not choose. Tests fail for reasons that rhyme with real outages—imports that rot, assertions that invert, vitality that drains when you panic-patch. The agent does not read a story about outages; it **lives inside one**.
-
-That is the “cool environment for real-world issues” pitch, stripped of marketing: the world is **typed**, **resettable**, and **steppable**. `reset`, `step`, and `state` are not buzzwords here; they are the contract we use ourselves when we train, evaluate, and demo. Docker wraps the same stack you see on Hugging Face because **if it does not ship, it does not count**.
-
-We stand on **[OpenEnv](https://github.com/meta-pytorch/OpenEnv)**—the same mental model the opening session drew on: an agent loop where **experience** flows back as **state** and **reward**, where tools and memory sit next to policy updates instead of pretending the world is a CSV. Our `openenv.yaml` and server entrypoint are how we stay inside that ecosystem instead of reinventing a private toy gym.
-
-## World modelling, teaming, and multiple voices
-
-A single hero agent makes a good movie poster; production is messier. We leaned into **multi-agent style interaction** in a lightweight way: signals you broadcast before you patch, subagents you delegate to when the blast radius scares you, an “expert” channel when you need a second opinion on whether a diff is sane. None of this is theatre for the UI—it feeds the same **reward and rubric** machinery the trainer sees.
-
-We also surface structure the agent can lean on: a **dependency graph** between modules, alerts that read like incident breadcrumbs, and memory hooks on the platform side so repeat signatures do not feel like déjà vu without context. That is our slice of **world modelling**: not a perfect simulator of the internet, but enough topology that “fix the symptom” and “fix the cause” stop looking identical.
-
-## The reward signal that actually teaches
-
-A lot of demos reward “the model talked confidently.” We wanted something harsher and more honest: **vitality** (are you still alive as a service?), **test recovery** (did you move the needle?), **efficiency** (did you thrash?), **coordination** (did you signal before you swung the wrench?), and a little room for **novelty** so memorising one playbook does not win forever. Watchdog penalties bite when you touch ground you should not.
-
-The ceremony slides put it better than we could: a great signal is **rich**, sometimes **clever in what it measures**, and **hard to game**. We split scoring into **composable rubrics** on purpose—so “cheat the scalar” is harder than “patch like you mean it.”
-
-If you have walked the path from **broad pretraining** to **supervised fine-tuning**, then **preference tuning**, and finally **RL in real environments**, you know the last mile is where proxies lie. **RL + envs** is where the gradient stops flattering the model and starts repeating the word “no” until behaviour changes. Above that loop lives the **harness** everyone is now designing for real systems: tools, memory, APIs, guardrails, observability—the boring words that decide whether learning survives contact with production.
-
-## Training logs, Hugging Face, and the story you can submit
-
-Judges and teammates should not have to SSH into our laptops. Training artefacts—**loss and reward curves**, JSON summaries, evaluation tables, adapter bundles when we have them—belong on **Hugging Face** next to the Space. We keep plots as **checked-in images** under `results/` so a reviewer does not have to resurrect a dead notebook cell to see a line move.
-
-The organisers framed judging roughly as: **environment ambition first**, **story second**, **visible improvement third**, **pipeline coherence last**. We took that seriously internally: the Space is the living env; the notebook (`CodeOrganismVM_Training.ipynb`) is the **Unsloth / TRL** path we want people to re-run; the repo README ties the URLs together; this post is the **human** layer—because the brief was explicit: *tell a story, not an API doc.*
-
-In plain language, our story answers the four questions they asked every team to carry:
-
-1. **Problem** — LLMs need practice at *long* incident response under stress, not one-shot trivia.  
-2. **Environment** — The agent **sees** tests, files, vitality, graphs, and platform telemetry; it **does** patches, rollbacks, quarantines, signals, and expert calls; it **gets rewarded** for rubric-shaped outcomes, not vibes.  
-3. **Results** — We compare policies and training runs against **baselines** (noop, random, heuristic, SFT-style schedules) and publish the numbers and plots we trust.  
-4. **Why it matters** — If we can train models to survive a self-sabotaging codebase toy, we learn how to teach them to survive messier real systems tomorrow.
-
-## Table stakes we still cared about
-
-None of this works if the plumbing lies. We kept a clean **client / server** split for API users, a valid **`openenv.yaml`**, and a standard **reset → step → state** surface so the environment stays a shared contract—not a private Python object only a notebook can touch. That is the unglamorous half of “ambitious”: the half that lets someone else **actually** train on what we built.
-
-## Why openness matters
-
-Closed gyms train brittle champions. **Open-source environments** with clear schemas let someone else break your assumptions kindly. We want other teams to fork the pain, rename the faults, and still keep the same `step` contract—because the next wave of ideas will not arrive from a single lab.
-
-## A closing note from us
-
-If you have played hard games—Mario routing you into the same pit until your thumbs learn patience—you already understand the emotional shape of this work. We are asking a model to sit with **a bruised codebase** long enough to stop flinching. That takes infrastructure, logs, and a little storytelling. Thank you for reading ours.
-
-— *Team Autonomous SRE*
+> Green dashboards can still feel wrong. Incidents are long stories, not single diffs.
 
 ---
 
-**Where to click next**
+## TL;DR
 
-- **Live environment:** this Hugging Face Space (Docker serves the API, Gradio UI, and static console).  
-- **Training notebook:** `CodeOrganismVM_Training.ipynb` in this repo (**Unsloth** + **TRL** oriented).  
-- **Plots & metrics:** GitHub `results/` and evaluation scripts under `training/`.  
-- **OpenEnv upstream:** [github.com/meta-pytorch/OpenEnv](https://github.com/meta-pytorch/OpenEnv)
+| You want… | We built… |
+|-----------|-----------|
+| A place LLMs **train**, not chat | Hostile codebase simulator + **reset / step / state** API |
+| Themes: **self-improvement**, **multi-agent**, **world model** | Vitality + faults + **signals / subagents / graph / memory** |
+| Proof, not vibes | **Plots + JSON** in repo, **Unsloth / TRL** notebook, **baselines** vs trained |
+| A story, not a spec | This page + Space UI + README links |
+
+---
+
+## Hackathon themes → our angle
+
+| Theme (Opening ceremony) | How it shows up here |
+|--------------------------|----------------------|
+| **Self-improvement** | Agent must recover under **new** faults; no single frozen cheat sheet wins. |
+| **Long-horizon planning** | Episodes span many steps; panic patching costs vitality. |
+| **Multi-agent** | **Signals**, **subagents**, expert channel: coordination before blind patches. |
+| **World modelling** | **Dependency graph**, alerts, platform memory: symptom vs cause diverge. |
+
+---
+
+## What the agent sees, does, earns
+
+| **Sees** | **Does** | **Earns (rubric slice)** |
+|----------|----------|---------------------------|
+| Tests, files, vitality | `patch_file`, `run_tests`, `rollback`, `quarantine`, … | Vitality delta, test recovery |
+| Stack traces, graph | `emit_signal`, `spawn_subagent`, `request_expert` | Efficiency, coordination, novelty |
+| Watchdog boundaries | Stops unsafe paths | Penalties if it games protected zones |
+
+**Design goal:** signal is **dense**, **composable** (R1 to R5 style split), and **annoying to game** without doing real repair.
+
+---
+
+## Model stack (plain English)
+
+| Stage | Role |
+|-------|------|
+| **Pretrain** | Broad language priors (we do not redo this here). |
+| **SFT** | Task-shaped behaviour from demonstrations / notebook path. |
+| **Preferences / RLHF** | Teaches “what humans prefer” before hard env RL. |
+| **RL + env** | **This project:** policy meets **real** `step()` outcomes, long-horizon credit. |
+| **Harness** | Tools, memory, API, guardrails, observability so learning survives contact with “prod shaped” UI. |
+
+---
+
+## Judging lens (how we lined ourselves up)
+
+| Criterion | Weight | Our one-line answer |
+|-----------|--------|---------------------|
+| Environment innovation | **40%** | Self-corrupting **service codebase** + SRE ops layer, not another grid world. |
+| Storytelling & presentation | **30%** | Space + blog + README: **problem → env → results → why**. |
+| Improvement in rewards | **20%** | Curves + tables in `results/`, **vs** noop / random / heuristic / SFT-style baselines. |
+| Reward & training pipeline | **10%** | Rubric-shaped rewards; **Unsloth / TRL** notebook tied to same env code path. |
+
+---
+
+## Four beats (the storyboard)
+
+| # | Beat | In one sentence |
+|---|------|------------------|
+| 1 | **Problem** | LLMs need **long** incident practice, not one-shot trivia. |
+| 2 | **Environment** | Typed world: faults, tests, vitality, graph, platform telemetry, standard OpenEnv surface. |
+| 3 | **Results** | Show **before/after** and **vs baseline** with committed plots, not orphan Colab-only charts. |
+| 4 | **Why it matters** | If we learn here, we learn how to push agents toward **messier** real systems later. |
+
+---
+
+## Where everything lives
+
+| Artifact | Link / path |
+|----------|-------------|
+| **Live demo** | This Hugging Face **Space** (Docker: API + Gradio + console) |
+| **Training notebook** | `CodeOrganismVM_Training.ipynb` (Unsloth + TRL oriented) |
+| **Numbers & plots** | GitHub: `results/`, scripts under `training/` |
+| **Upstream OpenEnv** | [meta-pytorch/OpenEnv](https://github.com/meta-pytorch/OpenEnv) |
+| **Manifest** | `openenv.yaml` in repo root |
+
+---
+
+## Table stakes (boring but real)
+
+| Rule | Why |
+|------|-----|
+| **Client / server** split | API clients do not import server-only hacks. |
+| **`openenv.yaml` + `reset` / `step` / `state`** | Others can **actually** hook trainers to the same contract. |
+| **Docker = Space** | If it does not ship, it does not count. |
+
+---
+
+## Closing
+
+We want a model to sit with a **bruised codebase** until it stops flinching. That needs **code**, **curves**, and a **short** story. Thanks for reading.
+
+*Team Autonomous SRE*
