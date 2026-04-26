@@ -1,9 +1,9 @@
 # The bruised codebase
 
-**Autonomous SRE / CodeOrganismVM**  
+**CodeOrganismVM**  
 OpenEnv-style incident sandbox
 
-> Green dashboards can still feel wrong. Incidents are long stories, not single diffs.
+> **Site reliability engineering lens:** this environment treats **service health**, **test and deployment signals**, and **controlled remediation** as a single operational loop so agents practise incident response the way SRE teams do: sustained attention, rollback discipline, and evidence-backed changes rather than one-off edits.
 
 ---
 
