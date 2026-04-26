@@ -6,8 +6,8 @@
   - Optionally runs GRPO recipe mode (no GPU)
 
   Usage (from repo root, PowerShell):
-    .\scripts\run_local_baseline_win311.ps1
-    .\scripts\run_local_baseline_win311.ps1 -SkipGrpoRecipe
+    .\scripts\run_local_baseline_win312.ps1
+    .\scripts\run_local_baseline_win312.ps1 -SkipGrpoRecipe
 #>
 param(
     [switch]$SkipGrpoRecipe
@@ -30,10 +30,10 @@ if (-not (Test-Path $VenvPython)) {
 Write-Host "==> Upgrading pip..."
 & $VenvPython -m pip install --upgrade pip
 
-Write-Host "==> Installing runtime requirements..."
+Write-Host "==> Installing backend/runtime requirements..."
 & $VenvPython -m pip install -r (Join-Path $RepoRoot "requirements.txt")
 
-Write-Host "==> Installing Windows-safe training stack (no Unsloth/xformers)..."
+Write-Host "==> Installing Python 3.12 Windows training stack (CPU sanity path)..."
 & $VenvPython -m pip install -r (Join-Path $RepoRoot "requirements-training-win312.txt")
 
 Write-Host "==> Installing matplotlib (for plot_results.py)..."

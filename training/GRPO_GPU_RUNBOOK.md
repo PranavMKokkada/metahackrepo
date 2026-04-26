@@ -5,13 +5,19 @@ This runbook turns `training/grpo_train.py` into a reproducible GPU training wor
 ## 1) Prerequisites
 
 - GPU runtime (Colab T4/A100 or HF Jobs T4+)
-- Python 3.11+
+- Python 3.12 (recommended for current GPU runtimes; 3.11 also works for backend-serving workflows)
 - Repo checkout with `training/sft_data.jsonl`
 
 ## 2) Install Dependencies
 
 ```bash
 pip install -r requirements-training.txt
+```
+
+For Windows local CPU sanity checks, use:
+
+```bash
+pip install -r requirements-training-win312.txt
 ```
 
 ## 3) Recipe Mode (no training, generates config artifacts)

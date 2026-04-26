@@ -18,6 +18,7 @@ ENV/
 env/
 .venv/
 .venv311/
+.venv312/
 
 # IDE & Editor
 .vscode/

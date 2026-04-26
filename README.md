@@ -78,6 +78,12 @@ python evaluation/run_eval.py
 python training/grpo_train.py --mode grpo
 ```
 
+## Python Version Split (Recommended)
+
+- Training pipeline: Python `3.12` (GPU environments like Lightning/HF Jobs).
+- Backend/API serving: Python `3.11` or `3.12` with `requirements.txt`.
+- Keep training and backend in separate virtual environments and only move model artifacts (`lora_adapter`, tokenizer files, evaluation JSON/plots) between them.
+
 ## Run Locally
 
 ```bash

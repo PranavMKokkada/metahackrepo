@@ -103,7 +103,7 @@ hf jobs run --from-repo . --config training/hf_jobs/grpo_job_accuracy.yaml
 |----------|-------------|
 | **HF Jobs** | Best match for “**~$30 credits**”, reproducible logs, no Colab disconnects. |
 | **Google Colab Pro+** | If you already pay Google; same commands after `pip install -r requirements-training.txt`. |
-| **Local Windows** | Use **`requirements-training-win311.txt`** for CPU sanity only; **do not** expect Unsloth/xformers parity—train on Linux GPU. |
+| **Local Windows** | Use **`requirements-training-win312.txt`** for CPU sanity only; **do not** expect Unsloth/xformers parity—train on Linux GPU. |
 
 ---
 
