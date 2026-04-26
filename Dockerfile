@@ -13,6 +13,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY --chown=appuser:appuser app.py baseline.py client.py data.py environment.py gym_wrapper.py inference.py models.py rubrics.py tasks.py test_api.py test_env.py ui.py validate.py openenv.yaml pyproject.toml ./
+# ui.py imports training.rollout for demo episode buttons; without this folder the UI never mounts in the Space image.
+COPY --chown=appuser:appuser training/rollout.py ./training/rollout.py
 COPY --chown=appuser:appuser evaluation ./evaluation
 COPY --chown=appuser:appuser project_skills ./project_skills
 

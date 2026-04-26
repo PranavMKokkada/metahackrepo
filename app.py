@@ -16,12 +16,25 @@ from models import Action, CodeOrganismActionType, Observation, StepResult, EnvS
 from environment import SessionManager
 from tasks import TASK_DEFINITIONS, run_grader
 
+# Gradio must stay available even if the UI module fails (e.g. missing optional paths in Docker).
+gr = None
+create_gradio_app = None
 try:
     import gradio as gr
-    from ui import create_gradio_app
 except ImportError:
     gr = None
-    create_gradio_app = None
+if gr is not None:
+    try:
+        from ui import create_gradio_app
+    except ImportError:
+        create_gradio_app = None
+        import warnings
+
+        warnings.warn(
+            "Gradio is installed but the Control Center UI did not import; /ui will be unavailable. "
+            "On Hugging Face Spaces, ensure `training/rollout.py` is copied into the image (see Dockerfile).",
+            stacklevel=1,
+        )
 
 
 def _csv_env(name: str, default: str = "") -> List[str]:
