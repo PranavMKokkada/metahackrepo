@@ -56,6 +56,11 @@ jobs:
             install -m0644 "${SRC}/.dockerignore" "${DST}/.dockerignore"
           fi
 
+          if [ ! -f "${SRC}/CodeOrganismVM_Training.ipynb" ]; then
+            echo "::error::CodeOrganismVM_Training.ipynb is missing from the checkout. It must be tracked in git (see .gitignore exception !CodeOrganismVM_Training.ipynb)."
+            exit 1
+          fi
+
           for f in \
             app.py session_runtime.py baseline.py client.py data.py environment.py gym_wrapper.py \
             inference.py models.py rubrics.py tasks.py test_api.py test_env.py \
