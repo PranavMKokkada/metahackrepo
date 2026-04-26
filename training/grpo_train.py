@@ -84,18 +84,11 @@ def _messages_to_text(messages: List[Dict[str, str]]) -> str:
     return "\n\n".join(parts)
 
 
-def _run_gpu_sft(args: argparse.Namespace) -> Dict[str, Any]:
-    try:
-        from datasets import Dataset
-        from unsloth import FastLanguageModel
-        from trl import SFTTrainer
-        from transformers import TrainingArguments
-    except Exception as exc:  # pragma: no cover - dependency gated
-        return {
-            "ran": False,
-            "reason": f"Missing GPU training dependencies: {exc}",
-            "hint": "Install requirements-training.txt in a GPU runtime.",
-        }
+def _run_gpu_sft_unsloth(args: argparse.Namespace) -> Dict[str, Any]:
+    from datasets import Dataset
+    from unsloth import FastLanguageModel
+    from trl import SFTTrainer
+    from transformers import TrainingArguments
 
     records = _load_sft_records(args.dataset_path)
     texts = [{"text": _messages_to_text(r.get("messages", []))} for r in records]
@@ -143,15 +136,124 @@ def _run_gpu_sft(args: argparse.Namespace) -> Dict[str, Any]:
         ),
     )
     train_result = trainer.train()
-    model.save_pretrained(os.path.join(args.output_dir, "lora_adapter"))
-    tokenizer.save_pretrained(os.path.join(args.output_dir, "lora_adapter"))
+    adapter_dir = os.path.join(args.output_dir, "lora_adapter")
+    model.save_pretrained(adapter_dir)
+    tokenizer.save_pretrained(adapter_dir)
     metrics = getattr(train_result, "metrics", {})
     return {
         "ran": True,
+        "backend": "unsloth",
         "records_used": len(records),
         "output_dir": args.output_dir,
         "metrics": metrics,
     }
+
+
+def _run_gpu_sft_peft_fallback(args: argparse.Namespace) -> Dict[str, Any]:
+    """4-bit LoRA SFT without Unsloth (Python 3.12 / Colab when Unsloth import breaks)."""
+    import torch
+    from datasets import Dataset
+    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+    from transformers import (
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        BitsAndBytesConfig,
+        TrainingArguments,
+    )
+    from trl import SFTTrainer
+
+    records = _load_sft_records(args.dataset_path)
+    texts = [{"text": _messages_to_text(r.get("messages", []))} for r in records]
+    dataset = Dataset.from_list(texts)
+
+    compute_dtype = torch.bfloat16 if args.bf16 else torch.float16
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_compute_dtype=compute_dtype,
+    )
+
+    tokenizer = AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model_id,
+        quantization_config=bnb_config,
+        device_map="auto",
+        trust_remote_code=True,
+    )
+    model = prepare_model_for_kbit_training(model)
+    model.enable_input_require_grads()
+    lora_config = LoraConfig(
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        lora_dropout=0,
+        bias="none",
+        task_type="CAUSAL_LM",
+    )
+    model = get_peft_model(model, lora_config)
+    model.config.use_cache = False
+
+    trainer = SFTTrainer(
+        model=model,
+        tokenizer=tokenizer,
+        train_dataset=dataset,
+        dataset_text_field="text",
+        max_seq_length=args.max_seq_length,
+        args=TrainingArguments(
+            output_dir=args.output_dir,
+            per_device_train_batch_size=args.per_device_train_batch_size,
+            gradient_accumulation_steps=args.gradient_accumulation_steps,
+            warmup_steps=args.warmup_steps,
+            max_steps=args.max_steps,
+            learning_rate=args.learning_rate,
+            logging_steps=args.logging_steps,
+            bf16=args.bf16,
+            fp16=not args.bf16,
+            optim="adamw_8bit",
+            weight_decay=0.01,
+            lr_scheduler_type="cosine",
+            seed=args.seed,
+            report_to="none",
+            save_strategy="steps",
+            save_steps=args.save_steps,
+            gradient_checkpointing=True,
+        ),
+    )
+    train_result = trainer.train()
+    adapter_dir = os.path.join(args.output_dir, "lora_adapter")
+    model.save_pretrained(adapter_dir)
+    tokenizer.save_pretrained(adapter_dir)
+    metrics = getattr(train_result, "metrics", {})
+    return {
+        "ran": True,
+        "backend": "peft_transformers_4bit",
+        "records_used": len(records),
+        "output_dir": args.output_dir,
+        "metrics": metrics,
+    }
+
+
+def _run_gpu_sft(args: argparse.Namespace) -> Dict[str, Any]:
+    try:
+        return _run_gpu_sft_unsloth(args)
+    except Exception as unsloth_exc:
+        try:
+            result = _run_gpu_sft_peft_fallback(args)
+            result["unsloth_error"] = str(unsloth_exc)
+            return result
+        except Exception as fallback_exc:
+            return {
+                "ran": False,
+                "reason": f"Unsloth path failed: {unsloth_exc}; PEFT fallback failed: {fallback_exc}",
+                "hint": (
+                    "On Python 3.12 (e.g. Colab), Unsloth may fail to import; fallback uses Transformers+PEFT+4bit. "
+                    "Ensure CUDA, bitsandbytes, peft, transformers, trl are installed."
+                ),
+            }
 
 
 def _write_gpu_recipe(args: argparse.Namespace) -> str:
