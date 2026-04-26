@@ -35,6 +35,8 @@ After a green run, the Space git repo contains the same files as the Docker buil
 
 ## 4. Submission URLs (replace `ORG/SPACE` with `HF_SPACE_REPO`)
 
+On the Space **Files** tab, the story is **`BLOG_POST.md`** (synced from GitHub). The Space **README** also links it at the top so it is easy to find.
+
 | What | URL |
 |------|-----|
 | **Live demo** | `https://huggingface.co/spaces/ORG/SPACE` |

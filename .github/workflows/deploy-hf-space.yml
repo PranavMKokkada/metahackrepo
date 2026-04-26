@@ -79,6 +79,11 @@ jobs:
           echo "Space payload tree (max depth 3):"
           find "${DST}" -maxdepth 3 -type f | sort
 
+          # Fail fast if blog / notebook missing (common submission gap).
+          test -s "${DST}/BLOG_POST.md"
+          test -s "${DST}/CodeOrganismVM_Training.ipynb"
+          echo "BLOG_POST.md lines: $(wc -l < "${DST}/BLOG_POST.md")"
+
       - name: Sync files to Hugging Face Space
         run: |
           set -euo pipefail

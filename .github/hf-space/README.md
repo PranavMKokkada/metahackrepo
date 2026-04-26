@@ -9,6 +9,9 @@ pinned: false
 
 # Autonomous SRE Space
 
+**Read the human write-up (environment, training arc, rewards, HF story):**  
+### [**BLOG_POST.md**](./BLOG_POST.md)
+
 This Space is automatically synced from the GitHub repository using the
 `Deploy Hugging Face Space` workflow.
 
