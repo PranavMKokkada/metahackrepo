@@ -58,7 +58,7 @@ Plot artifacts:
 Important note:
 
 - This repository now includes reproducible evaluation evidence.
-- It does **not** claim completed GRPO fine-tuning results yet.
+- LoRA fine-tuning evidence can be imported from a completed external GPU run bundle.
 
 Notebook training log extraction (from a local copy of `Untitled20.ipynb`; not stored in git — use `training/extract_notebook_training.py --notebook path/to/your.ipynb`):
 
@@ -83,6 +83,26 @@ python training/grpo_train.py --mode grpo
 - Training pipeline: Python `3.12` (GPU environments like Lightning/HF Jobs).
 - Backend/API serving: Python `3.11` or `3.12` with `requirements.txt`.
 - Keep training and backend in separate virtual environments and only move model artifacts (`lora_adapter`, tokenizer files, evaluation JSON/plots) between them.
+
+## Import Completed LoRA Bundle
+
+If you already finished GPU training externally, import the downloadable bundle:
+
+```bash
+python scripts/import_lora_bundle.py --bundle "CodeOrganismVM_lora_training_bundle (1).tar.gz" --copy-dataset
+```
+
+This wires:
+
+- `artifacts/runtime/lora_adapter/` (local stable adapter path)
+- `artifacts/lora_bundle/results/*.json|*.log` (training evidence)
+- `training/sft_data.jsonl` (optional copy from the bundle with `--copy-dataset`)
+
+Quick local hardware readiness check for base+LoRA inference:
+
+```bash
+python scripts/check_local_lora_compute.py
+```
 
 ## Run Locally
 
@@ -119,6 +139,28 @@ Latest local validator run:
   - Variable: `HF_MODEL_REPO` (example: `teletubbies/autonomous-sre-lora`)
   - Variable: `HF_DATASET_REPO` (example: `teletubbies/autonomous-sre-logs`)
 - If CI still shows old vulnerable package versions, you likely used **Re-run job** on an older workflow run (GitHub reuses that run’s commit). Open the latest commit on `main` and use **Actions → Re-run workflow** from there, or push a new commit.
+
+### Publish imported LoRA artifacts to Hugging Face repos
+
+Set environment variables and upload adapter + run logs:
+
+```bash
+# Linux/macOS
+export HF_TOKEN=...
+export HF_MODEL_REPO=teletubbies/autonomous-sre-lora
+export HF_DATASET_REPO=teletubbies/autonomous-sre-logs
+export BASE_MODEL_ID=unsloth/llama-3-8b-Instruct-bnb-4bit
+python scripts/publish_lora_artifacts.py
+```
+
+```powershell
+# Windows PowerShell
+$env:HF_TOKEN="..."
+$env:HF_MODEL_REPO="teletubbies/autonomous-sre-lora"
+$env:HF_DATASET_REPO="teletubbies/autonomous-sre-logs"
+$env:BASE_MODEL_ID="unsloth/llama-3-8b-Instruct-bnb-4bit"
+python scripts/publish_lora_artifacts.py
+```
 
 ## Demo Asset
 

@@ -61,9 +61,13 @@ offline_models/
 *.pdf
 *.docx
 *.ipynb
+*.tar.gz
+*.zip
 trainingthings_images/
 experiments/
 training/sft_data.jsonl
+artifacts/
+bundle_extract/
 .main-worktree
 GEMINI.md
 REPO_ENGINEERING_DOSSIER.md
